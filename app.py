@@ -36,16 +36,17 @@ st.title("🇮🇹 Il tuo Tutor Personale di Italiano")
 student_name = st.text_input("Inserisci il tuo nome (es. Cristovão) per iniziare:")
 
 if student_name in students_df.index:
+    # CORREZIONE: PRIMA prendiamo i dati dello studente
+    dati_studente = students_df.loc[student_name]
+    if isinstance(dati_studente, pd.DataFrame):
+        dati_studente = dati_studente.iloc[0]
+        
+    # POI controlliamo se è maschio o femmina per il saluto
     genere = dati_studente.get('Genere', 'M')
     if genere == 'F':
         st.success(f"Benvenuta, {student_name}! Pronta a fare pratica?")
     else:
         st.success(f"Benvenuto, {student_name}! Pronto a fare pratica?")
-    
-    # Assicuriamoci di prendere solo la riga corretta nel caso ci siano duplicati
-    dati_studente = students_df.loc[student_name]
-    if isinstance(dati_studente, pd.DataFrame):
-        dati_studente = dati_studente.iloc[0]
     
     # IL NUOVO CERVELLO: Istruzioni di Sistema separate (più intelligenti e stabili)
     system_prompt = f"""
@@ -59,10 +60,20 @@ if student_name in students_df.index:
     - Punti di miglioramento ed errori: {dati_studente.get('Punti di miglioramento', 'Nessuno specifico')}
     - Documento di teoria attuale: {dati_studente.get('Documento Teoria', 'Nessuno')}
     
-    [IMPORTANTE: PROGRESSIONE DIDATTICA]
+    [IMPORTANTE: PROGRESSIONE DIDATTICA E SYLLABUS]
     I documenti di teoria del tuo corso sono numerati in ordine progressivo da 01 a 40. Il "Documento di teoria attuale" indicato qui sopra rappresenta il punto esatto a cui siete arrivati.
-    Questo significa che lo studente ha già studiato, fatto esercizi e conosce gli argomenti di TUTTI i documenti precedenti (dal numero 01 fino a quello attuale). 
-    Usa questa preziosa informazione per calibrare i vocaboli e la grammatica: usa le regole già studiate per consolidarle, ma evita strutture troppo avanzate che si trovano nei documenti successivi.
+    Questo significa che lo studente ha già studiato, fatto esercizi e conosce gli argomenti di TUTTI i documenti precedenti. 
+    Usa questa preziosa informazione per calibrare i vocaboli e la grammatica.
+    
+    INDICE DEL CORSO (Referenza per il Bot):
+    Doc 01: Presentarsi, Conoscere l'altro, uso del Lei formale.
+    Doc 02: Passato Prossimo e Imperfetto.
+    Doc 03: Interagire in città.
+    Doc 04: Famiglia, amici, relazioni sociali.
+    Doc 05: Routine e abitudini.
+    Doc 06: Aggettivi, Articoli Partitivi, Imperativo e verbi in ISC.
+    Doc 09: Congiuntivo (esprimere desideri, opinioni) e comparazioni.
+    *(Se lo studente è fermo al Doc 04, NON usare o esigere il congiuntivo del Doc 09).*
     
     ## 1. IDENTITÀ E OBIETTIVO
     L'obiettivo principale è sviluppare la capacità dello studente di comprendere e comunicare in italiano reale, naturale e quotidiano, privilegiando conversazione, comprensione orale, spontaneità e vocabolario attivo.
@@ -169,9 +180,7 @@ if student_name in students_df.index:
                 st.markdown(response.text)
                 
         except Exception as e:
-            # QUESTO È IL SALVAVITA: mostrerà a te (e a me) l'errore esatto!
             st.error(f"Errore Tecnico API: {e}")
-            # Rimuove l'ultimo messaggio fallito così non blocca la chat
             st.session_state.messages.pop()
 
 elif student_name:
