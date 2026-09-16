@@ -4,7 +4,7 @@ import pandas as pd
 import requests
 import io
 
-st.set_page_config(page_title="Tutor Italiano", page_icon="🇮🇹")
+st.set_page_config(page_title="Il tuo professor Alessandro online", page_icon="🤖")
 
 # 1. Configurazione API
 try:
@@ -31,7 +31,7 @@ except Exception as e:
     st.error(f"Errore caricamento dati: {e}")
     st.stop()
 
-st.title("🇮🇹 Il tuo Tutor Personale di Italiano")
+st.title("🤖 Il tuo professor Alessandro online")
 
 # 3. Interfaccia
 student_name = st.text_input("Inserisci il tuo nome per iniziare:")
