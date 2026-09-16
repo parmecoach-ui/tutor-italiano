@@ -26,7 +26,6 @@ try:
     # LA SOLUZIONE ALL'ERRORE È QUI (dtype=str): Leggiamo tutto come testo!
     students_df = pd.read_csv(io.StringIO(r.text), dtype=str)
     students_df.columns = students_df.columns.str.strip() 
-    students_df.fillna("Non specificato", inplace=True) # Ora funzionerà senza problemi!
     students_df.set_index('Student', inplace=True)
 except Exception as e:
     st.error(f"Errore caricamento dati: {e}")
