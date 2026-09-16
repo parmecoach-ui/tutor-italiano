@@ -2,28 +2,31 @@ import streamlit as st
 import google.generativeai as genai
 import pandas as pd
 
+st.set_page_config(page_title="Tutor Italiano", page_icon="🇮🇹")
+
 # 1. Configurazione API
-genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-model = genai.GenerativeModel('gemini-1.5-pro')
+try:
+    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+    model = genai.GenerativeModel('gemini-1.5-pro')
+except Exception as e:
+    st.error("Errore con la chiave API di Gemini. Controlla i Secrets su Streamlit!")
+    st.stop()
 
-# 2. Carica i dati da Google Sheets (Ho inserito qui il tuo link!)
-CSV_URL = "https://docs.google.com/spreadsheets/d/1bEHnFNXYo5CGeDhHlKq23m8C8mDEW8s_TTZz7ZccjTk/export?format=csv"
-
-@st.cache_data 
-def load_data():
-    df = pd.read_csv(CSV_URL)
-    df.set_index('Nome', inplace=True)
-    return df
+# 2. Caricamento Dati
+CSV_URL = "https://docs.google.com/spreadsheets/d/1bEHnFNXYo5CGeDhHlKq23m8C8mDEW8s_TTZz7ZccjTk/export?format=csv&gid=0"
 
 try:
-    students_df = load_data()
-except:
-    st.error("Errore nel caricamento del database.")
+    # ATTENZIONE: Abbiamo tolto la cache per forzare la lettura in tempo reale
+    students_df = pd.read_csv(CSV_URL)
+    students_df.set_index('Nome', inplace=True)
+except Exception as e:
+    st.error(f"Errore tecnico specifico: {e}")
+    st.info("Se vedi un errore HTTP, significa che c'è un blocco di rete. Se vedi 'KeyError: Nome', le colonne nel foglio non sono scritte bene.")
     st.stop()
 
 st.title("🇮🇹 Il tuo Tutor Personale di Italiano")
 
-# 3. Riconoscimento dell'alunno
+# 3. Interfaccia
 student_name = st.text_input("Inserisci il tuo nome (es. Rebecca, Cristovão) per iniziare:")
 
 if student_name in students_df.index:
@@ -126,10 +129,13 @@ if student_name in students_df.index:
         with st.chat_message("user"):
             st.markdown(user_input)
             
-        response = model.generate_content([m["content"] for m in st.session_state.messages])
-        
-        st.session_state.messages.append({"role": "model", "content": response.text})
-        with st.chat_message("model"):
-            st.markdown(response.text)
+        try:
+            response = model.generate_content([m["content"] for m in st.session_state.messages])
+            st.session_state.messages.append({"role": "model", "content": response.text})
+            with st.chat_message("model"):
+                st.markdown(response.text)
+        except Exception as e:
+            st.error("Errore nella generazione della risposta. Controlla la chiave API.")
+
 elif student_name:
-    st.warning("Nome non trovato. Assicurati di scriverlo esattamente come nel database.")
+    st.warning("Nome non trovato. Nomi validi presenti nel database: " + ", ".join(students_df.index.astype(str).tolist()))
