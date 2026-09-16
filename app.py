@@ -4,7 +4,7 @@ import pandas as pd
 import requests
 import io
 
-st.set_page_config(page_title="Il tuo professor Alessandro online", page_icon="🤖")
+st.set_page_config(page_title="Il tuo professor Alessandro online", page_icon="😊")
 
 # 1. Configurazione API
 try:
@@ -23,15 +23,16 @@ try:
         st.error("Google sta bloccando il file.")
         st.stop()
         
-    students_df = pd.read_csv(io.StringIO(r.text))
+    # LA SOLUZIONE ALL'ERRORE È QUI (dtype=str): Leggiamo tutto come testo!
+    students_df = pd.read_csv(io.StringIO(r.text), dtype=str)
     students_df.columns = students_df.columns.str.strip() 
-    students_df.fillna("Non specificato", inplace=True) # Previene errori con le celle vuote
+    students_df.fillna("Non specificato", inplace=True) # Ora funzionerà senza problemi!
     students_df.set_index('Student', inplace=True)
 except Exception as e:
     st.error(f"Errore caricamento dati: {e}")
     st.stop()
 
-st.title("🤖 Il tuo professor Alessandro online")
+st.title("😊 Il tuo professor Alessandro online")
 
 # 3. Interfaccia
 student_name = st.text_input("Inserisci il tuo nome per iniziare:")
@@ -165,8 +166,6 @@ if student_name:
         Porta progressivamente lo studente a comprendere, pensare e comunicare in italiano senza dipendere dalla traduzione mentale in inglese.
         """
         
-        # INIZIALIZZAZIONE DEL MODELLO
-        # NOTA: Per usare un modello velocissimo e stabile (che non darà errore 404), usiamo gemini-2.5-flash
         model = genai.GenerativeModel(
             model_name='gemini-3.6-flash',
             system_instruction=system_prompt
