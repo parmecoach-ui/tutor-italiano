@@ -36,7 +36,11 @@ st.title("🇮🇹 Il tuo Tutor Personale di Italiano")
 student_name = st.text_input("Inserisci il tuo nome (es. Cristovão) per iniziare:")
 
 if student_name in students_df.index:
-    st.success(f"Benvenuto/a, {student_name}! Pronto a fare pratica?")
+    genere = dati_studente.get('Genere', 'M')
+    if genere == 'F':
+        st.success(f"Benvenuta, {student_name}! Pronta a fare pratica?")
+    else:
+        st.success(f"Benvenuto, {student_name}! Pronto a fare pratica?")
     
     # Assicuriamoci di prendere solo la riga corretta nel caso ci siano duplicati
     dati_studente = students_df.loc[student_name]
