@@ -133,7 +133,7 @@ if student_name in students_df.index:
     
     # Inizializziamo il modello (usando la versione flash, più intelligente) passando le istruzioni base
     model = genai.GenerativeModel(
-        model_name='gemini-2.5-flash',
+        model_name='gemini-3.6-flash',
         system_instruction=system_prompt
     )
 
