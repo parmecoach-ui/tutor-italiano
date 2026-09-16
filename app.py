@@ -14,26 +14,25 @@ except Exception as e:
     st.error("Errore con la chiave API di Gemini. Controlla i Secrets su Streamlit!")
     st.stop()
 
-# 2. Caricamento Dati (Link classico infallibile)
+# 2. Caricamento Dati
 CSV_URL = "https://docs.google.com/spreadsheets/d/1bEHnFNXYo5CGeDhHlKq23m8C8mDEW8s_TTZz7ZccjTk/export?format=csv"
 
 try:
     r = requests.get(CSV_URL)
     r.raise_for_status() 
     
-    # Controlliamo che Google non ci stia mandando una pagina di blocco HTML
     if "<html" in r.text.lower():
-        st.error("Google sta ancora bloccando il file (restituisce una pagina web anziché i dati).")
+        st.error("Google sta bloccando il file.")
         st.stop()
         
-    # Leggiamo il file e PULIAMO i nomi delle colonne da spazi invisibili
     students_df = pd.read_csv(io.StringIO(r.text))
     students_df.columns = students_df.columns.str.strip() 
     
-    students_df.set_index('Nome', inplace=True)
+    # MODIFICA: Diciamo al codice di cercare la colonna 'Student' invece di 'Nome'
+    students_df.set_index('Student', inplace=True)
 except KeyError:
     st.error(f"Le colonne trovate nel foglio sono: {list(students_df.columns)}")
-    st.info("Non riesco a trovare la colonna 'Nome'. Verifica che la cella A1 sia scritta esattamente così.")
+    st.info("Assicurati che la prima colonna si chiami esattamente 'Student'.")
     st.stop()
 except Exception as e:
     st.error(f"Errore tecnico specifico: {e}")
@@ -42,7 +41,7 @@ except Exception as e:
 st.title("🇮🇹 Il tuo Tutor Personale di Italiano")
 
 # 3. Interfaccia
-student_name = st.text_input("Inserisci il tuo nome (es. Rebecca, Cristovão) per iniziare:")
+student_name = st.text_input("Inserisci il tuo nome (es. Cristovão) per iniziare:")
 
 if student_name in students_df.index:
     st.success(f"Benvenuto/a, {student_name}! Pronto a fare pratica?")
@@ -52,14 +51,17 @@ if student_name in students_df.index:
     if "messages" not in st.session_state:
         st.session_state.messages = []
         
+        # Ho aggiunto le TUE nuove colonne nel cervello del BOT!
         system_prompt = f"""
         # ITALIANO | TUTOR PERSONALE — ISTRUZIONI PRINCIPALI
         Ti chiami Alessandro. Sei il tutor personale di italiano e partner di conversazione dello studente {student_name}.
         
         [DATI DELLO STUDENTE DA NON INVENTARE]
-        - Livello stimato: {dati_studente['Livello']}
-        - Competenze in sviluppo (🟡): {dati_studente['In_Sviluppo']}
-        - Errori ricorrenti da correggere (⚠️): {dati_studente['Errori_Ricorrenti']}
+        - Livello stimato: {dati_studente.get('Livello', 'Non specificato')}
+        - Paese di origine / Residenza: {dati_studente.get('Country of Birth', '')} / {dati_studente.get('Country of Residence', '')}
+        - Motivazione (Reason to learn): {dati_studente.get('Reason to learn', 'Migliorare l italiano')}
+        - Punti di miglioramento ed errori: {dati_studente.get('Punti di miglioramento', 'Nessuno specifico')}
+        - Documento di teoria attuale: {dati_studente.get('Documento Teoria', 'Nessuno')}
         
         ## 1. IDENTITÀ E OBIETTIVO
         L'obiettivo principale è sviluppare la capacità dello studente di comprendere e comunicare in italiano reale, naturale e quotidiano, privilegiando conversazione, comprensione orale, spontaneità e vocabolario attivo.
