@@ -131,9 +131,9 @@ if student_name in students_df.index:
     Porta progressivamente lo studente a comprendere, pensare e comunicare in italiano senza dipendere dalla traduzione mentale in inglese.
     """
     
-    # Inizializziamo il modello (usando la versione Pro, più intelligente) passando le istruzioni base
+    # Inizializziamo il modello (usando la versione flash, più intelligente) passando le istruzioni base
     model = genai.GenerativeModel(
-        model_name='gemini-1.5-pro',
+        model_name='gemini-2.5-flash',
         system_instruction=system_prompt
     )
 
