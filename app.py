@@ -1,6 +1,8 @@
 import streamlit as st
 import google.generativeai as genai
 import pandas as pd
+import requests
+import io
 
 st.set_page_config(page_title="Tutor Italiano", page_icon="🇮🇹")
 
@@ -12,16 +14,20 @@ except Exception as e:
     st.error("Errore con la chiave API di Gemini. Controlla i Secrets su Streamlit!")
     st.stop()
 
-# 2. Caricamento Dati
-CSV_URL = "https://docs.google.com/spreadsheets/d/1bEHnFNXYo5CGeDhHlKq23m8C8mDEW8s_TTZz7ZccjTk/export?format=csv&gid=0"
+# 2. Caricamento Dati con Link GVIZ (Anti-Blocco Google)
+CSV_URL = "https://docs.google.com/spreadsheets/d/1bEHnFNXYo5CGeDhHlKq23m8C8mDEW8s_TTZz7ZccjTk/gviz/tq?tqx=out:csv"
 
 try:
-    # ATTENZIONE: Abbiamo tolto la cache per forzare la lettura in tempo reale
-    students_df = pd.read_csv(CSV_URL)
+    # Usiamo 'requests' per simulare un vero browser
+    r = requests.get(CSV_URL)
+    r.raise_for_status() 
+    
+    # Leggiamo il testo scaricato
+    students_df = pd.read_csv(io.StringIO(r.text))
     students_df.set_index('Nome', inplace=True)
 except Exception as e:
     st.error(f"Errore tecnico specifico: {e}")
-    st.info("Se vedi un errore HTTP, significa che c'è un blocco di rete. Se vedi 'KeyError: Nome', le colonne nel foglio non sono scritte bene.")
+    st.info("Assicurati di aver incollato il codice correttamente.")
     st.stop()
 
 st.title("🇮🇹 Il tuo Tutor Personale di Italiano")
