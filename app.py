@@ -7,7 +7,7 @@ genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 model = genai.GenerativeModel('gemini-1.5-pro')
 
 # 2. Carica i dati da Google Sheets (Ho inserito qui il tuo link!)
-CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQQ89B1PGR-58hb6h6rwzwSf8PMjioEssUVXMNNkPfWqhIQyyIl3eiddk_JHXeKYuJgGd3V5o19OXOr/pub?output=csv"
+CSV_URL = "https://docs.google.com/spreadsheets/d/1bEHnFNXYo5CGeDhHlKq23m8C8mDEW8s_TTZz7ZccjTk/export?format=csv"
 
 @st.cache_data 
 def load_data():
