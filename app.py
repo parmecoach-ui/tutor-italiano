@@ -14,20 +14,29 @@ except Exception as e:
     st.error("Errore con la chiave API di Gemini. Controlla i Secrets su Streamlit!")
     st.stop()
 
-# 2. Caricamento Dati con Link GVIZ (Anti-Blocco Google)
-CSV_URL = "https://docs.google.com/spreadsheets/d/1bEHnFNXYo5CGeDhHlKq23m8C8mDEW8s_TTZz7ZccjTk/gviz/tq?tqx=out:csv"
+# 2. Caricamento Dati (Link classico infallibile)
+CSV_URL = "https://docs.google.com/spreadsheets/d/1bEHnFNXYo5CGeDhHlKq23m8C8mDEW8s_TTZz7ZccjTk/export?format=csv"
 
 try:
-    # Usiamo 'requests' per simulare un vero browser
     r = requests.get(CSV_URL)
     r.raise_for_status() 
     
-    # Leggiamo il testo scaricato
+    # Controlliamo che Google non ci stia mandando una pagina di blocco HTML
+    if "<html" in r.text.lower():
+        st.error("Google sta ancora bloccando il file (restituisce una pagina web anziché i dati).")
+        st.stop()
+        
+    # Leggiamo il file e PULIAMO i nomi delle colonne da spazi invisibili
     students_df = pd.read_csv(io.StringIO(r.text))
+    students_df.columns = students_df.columns.str.strip() 
+    
     students_df.set_index('Nome', inplace=True)
+except KeyError:
+    st.error(f"Le colonne trovate nel foglio sono: {list(students_df.columns)}")
+    st.info("Non riesco a trovare la colonna 'Nome'. Verifica che la cella A1 sia scritta esattamente così.")
+    st.stop()
 except Exception as e:
     st.error(f"Errore tecnico specifico: {e}")
-    st.info("Assicurati di aver incollato il codice correttamente.")
     st.stop()
 
 st.title("🇮🇹 Il tuo Tutor Personale di Italiano")
