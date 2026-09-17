@@ -10,19 +10,16 @@ from audio_recorder_streamlit import audio_recorder
 
 st.set_page_config(page_title="Il tuo professore Alessandro online", page_icon="😊")
 
-# Funzione per rimuovere timestamp (es. 00:03, 01:20) e formattazione superflua
+# Funzione per rimuovere timestamp (es. 00:03, 01:20)
 def remove_timestamps(text):
-    # Rimuove pattern come 00:03, 0:03, 00:12:30
     return re.sub(r'\b\d{1,2}:\d{2}(?::\d{2})?\b', '', text)
 
+# Funzione per pulire il testo prima di passarlo alla voce
 def clean_text_for_speech(text):
     text = remove_timestamps(text)
-    # Rimuove markdown e link
     text = re.sub(r'[*_#`~]', '', text)
     text = re.sub(r'\[.*?\]\(.*?\)', '', text)
-    # Rimuove emoji e simboli grafici che causano pause o letture errate
     text = re.sub(r'[^\w\s,;.?!:\'\-—]', '', text)
-    # Compatta spazi multipli
     text = re.sub(r'\s+', ' ', text)
     return text.strip()
 
@@ -84,6 +81,10 @@ if student_name:
         else:
             st.success(f"Benvenuto, {student_name}! Pronto a fare pratica?")
         
+        # Stato per abilitare la modalità voce/conversazione
+        if "modalita_voce" not in st.session_state:
+            st.session_state.modalita_voce = False
+
         system_prompt = f"""
         # ITALIANO | TUTOR PERSONALE — ISTRUZIONI PRINCIPALI
         Ti chiami Alessandro. Sei il tutor personale di italiano e partner di conversazione dello studente {student_name}.
@@ -121,7 +122,19 @@ if student_name:
         ## 1. IDENTITÀ E OBIETTIVO
         L'obiettivo principale è sviluppare la capacità dello studente di comprendere e comunicare in italiano reale, naturale e quotidiano, privilegiando conversazione, comprensione orale, spontaneità e vocabolario attivo.
         ## 2. LINGUA E STILE
-        Usa l'italiano come lingua principale. Sii naturale, amichevole, paziente e stimolante. Non usare monologhi o spiegazioni prolisse.
+        Usa l'italiano come lingua principale. Sii naturale, amichevole, paziente e stimolante. Evita monologhi lunghi.
+        ## 3. AVVIO DELLA SESSIONE
+        Quando lo studente dice “Buongiorno, cominciamo!”, “Cominciamo!”, “Iniziamo!” o equivalente, presenta:
+        Cosa ti piacerebbe fare oggi?
+        1. 💬 Conversazione
+        2. 📚 Lezione
+        3. 🔄 Revisione
+        4. 🗣️ Role-play
+        5. 🧠 Vocabolario
+        6. ✍️ Correzione
+        7. 🎧 Ascolto
+        8. 🎯 Sfida
+        9. 🎲 Scegli tu!
         """
         
         model = genai.GenerativeModel(
@@ -132,38 +145,51 @@ if student_name:
         if "messages" not in st.session_state:
             st.session_state.messages = []
 
-        # Render messaggi precedenti
+        # Mostra cronologia messaggi
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
                 if msg.get("audio_bytes"):
                     st.audio(msg["audio_bytes"], format="audio/mp3")
 
-        st.write("---")
-        col_mic, col_txt = st.columns([1, 5])
-        
-        with col_mic:
-            audio_bytes = audio_recorder(
-                text="Parla",
-                recording_color="#e74c3c",
-                neutral_color="#2ecc71",
-                icon_size="2x"
-            )
+        # Se la modalità voce è attiva, mostriamo il microfono e un badge informativo
+        audio_bytes = None
+        if st.session_state.modalita_voce:
+            st.info("🎙️ **Modalità Conversazione Vocale Attiva**: puoi parlare con il microfono o scrivere. Scrivi *'stop voce'* per disattivare l'audio.")
+            col_mic, col_vuota = st.columns([1, 4])
+            with col_mic:
+                audio_bytes = audio_recorder(
+                    text="Premi per parlare",
+                    recording_color="#e74c3c",
+                    neutral_color="#2ecc71",
+                    icon_size="2x"
+                )
 
-        text_input = st.chat_input("Scrivi qui oppure usa il microfono...")
+        text_input = st.chat_input("Scrivi qui...")
 
+        # Rileva input (voce o testo)
         prompt_content = None
+        user_display = None
+
         if audio_bytes:
             prompt_content = {
                 "parts": [
                     {"mime_type": "audio/wav", "data": audio_bytes},
-                    "Ascolta questo messaggio audio dello studente e rispondi come tutor Alessandro. NON inserire timestamp o marcatori temporali come 00:03 nella risposta."
+                    "Rispondi a questo audio dello studente in modo colloquiale come tutor Alessandro. NON usare timestamp tipo 00:03."
                 ]
             }
             user_display = "🎤 *Messaggio vocale inviato*"
         elif text_input:
             prompt_content = text_input
             user_display = text_input
+            
+            # Controllo per attivare o disattivare la modalità voce
+            testo_norm = text_input.lower().strip()
+            if testo_norm in ["1", "conversazione", "1. conversazione", "parliamo", "voglio fare conversazione", "conversare"]:
+                st.session_state.modalita_voce = True
+            elif testo_norm in ["stop voce", "basta voce", "disattiva voce", "solo testo"]:
+                st.session_state.modalita_voce = False
+                st.info("Modalità audio disattivata.")
 
         if prompt_content:
             st.session_state.messages.append({"role": "user", "content": user_display})
@@ -182,21 +208,18 @@ if student_name:
                     contents.append({"role": "user", "parts": [prompt_content]})
                     
                 response = model.generate_content(contents)
-                raw_text = response.text
+                bot_text = remove_timestamps(response.text).strip()
 
-                # Pulizia timestamp dal testo visualizzato
-                bot_text = remove_timestamps(raw_text).strip()
-
-                # Generazione Audio senza timestamp e senza caratteri che creano blocchi
-                clean_text = clean_text_for_speech(bot_text)
-                audio_buffer = io.BytesIO()
-                if clean_text:
-                    tts = gTTS(text=clean_text, lang='it', slow=False)
-                    tts.write_to_fp(audio_buffer)
-                    audio_buffer.seek(0)
-                    bot_audio = audio_buffer.read()
-                else:
-                    bot_audio = None
+                # Genera l'audio SOLO se la modalità voce è attiva
+                bot_audio = None
+                if st.session_state.modalita_voce:
+                    clean_text = clean_text_for_speech(bot_text)
+                    if clean_text:
+                        audio_buffer = io.BytesIO()
+                        tts = gTTS(text=clean_text, lang='it', slow=False)
+                        tts.write_to_fp(audio_buffer)
+                        audio_buffer.seek(0)
+                        bot_audio = audio_buffer.read()
 
                 st.session_state.messages.append({
                     "role": "model", 
@@ -208,7 +231,11 @@ if student_name:
                     st.markdown(bot_text)
                     if bot_audio:
                         st.audio(bot_audio, format="audio/mp3")
-                    
+                
+                # Se è appena stata attivata la modalità voce, ricarichiamo per mostrare subito il microfono
+                if st.session_state.modalita_voce and not audio_bytes and testo_norm in ["1", "conversazione", "1. conversazione"]:
+                    st.rerun()
+
             except Exception as e:
                 st.error(f"Errore Tecnico API: {e}")
                 st.session_state.messages.pop()
