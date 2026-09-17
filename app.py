@@ -5,7 +5,7 @@ import requests
 import io
 import difflib
 
-st.set_page_config(page_title="Il tuo professor Alessandro online", page_icon="😊")
+st.set_page_config(page_title="Il tuo professore Alessandro online", page_icon="😊")
 
 # 1. Configurazione API
 try:
@@ -35,7 +35,7 @@ except Exception as e:
     st.error(f"Errore caricamento dati: {e}")
     st.stop()
 
-st.title("😊 Il tuo professor Alessandro online")
+st.title("😊 Il tuo professore Alessandro online")
 
 # 3. Interfaccia
 student_name_input = st.text_input("Inserisci il tuo nome per iniziare:")
@@ -211,4 +211,4 @@ if student_name:
         if simili:
             st.warning(f"Nome non trovato. Forse intendevi: **{', '.join(simili)}**?")
         else:
-            st.warning("Nome non trovato nel registro. Controlla come lo hai scritto o contatta il professor Alessandro!")
+            st.warning("Nome non trovato nel registro. Controlla come lo hai scritto o contatta il professore Alessandro!")
