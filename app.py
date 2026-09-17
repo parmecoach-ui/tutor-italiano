@@ -20,7 +20,8 @@ def clean_text_for_speech(text):
     text = re.sub(r'\s+', ' ', text)
     return text.strip()
 
-def salva_sessione_su_sheet(student_name, message_count, activity, messages_list, model):
+# Funzione per generare il feedback con il nuovo prompt calibrato
+def salva_sessione_su_sheet(student_name, message_count, activity, messages_list, model, progressi_precedenti):
     apps_script_url = st.secrets.get("APPS_SCRIPT_URL", None)
     if not apps_script_url or message_count <= 0:
         return None, None
@@ -28,18 +29,22 @@ def salva_sessione_su_sheet(student_name, message_count, activity, messages_list
     chat_transcript = "\n".join([f"{m['role']}: {m['content']}" for m in messages_list if "content" in m])
     
     prompt_sintesi = f"""
-    Analizza la seguente sessione didattica di italiano con lo studente {student_name}:
+    Sei un supervisore didattico esperto. Analizza questa sessione di studio della lingua italiana tra il tutor Alessandro e lo studente {student_name}:
+    [STORICO PRECEDENTE DELLO STUDENTE]
+    {progressi_precedenti}
+
+    [TRASCRIZIONE SESSIONE ATTUALE]
     {chat_transcript}
     
-    Genera due contenuti distinti e restituiscili rigorosamente in formato JSON valido:
+    Genera due valutazioni distinte e restituiscile ESCLUSIVAMENTE come JSON valido:
     {{
-      "excel_summary": "Sintesi tecnica e concisa (massimo 2-3 righe) SOLO in italiano per il registro del professore: argomenti trattati, errori grammaticali/lessicali specifici emersi e punti di forza dimostrati.",
-      "student_feedback": "Messaggio caloroso, incoraggiante ed empatico per lo studente. Deve valorizzare i progressi fatti durante la sessione ma anche indicare con delicatezza su cosa continuare a esercitarsi. Deve essere strutturato esattamente così:\\n\\n🇮🇹 **Il tuo feedback di oggi:**\\n(Testo incoraggiante in italiano con punti di forza ed elementi da migliorare)\\n\\n🇬🇧 **Your feedback today:**\\n(Traduzione fedele e naturale in inglese del testo sopra)"
+      "excel_summary": "Giudizio clinico, sintetico (massimo 2-3 frasi) e diretto per il registro privato del docente. Niente convenevoli. Valuta esplicitamente la traiettoria: lo studente recepisce le correzioni e le applica o è piantato/bloccato sugli stessi errori? Specifica chiaramente gli argomenti e le strutture grammaticali/lessicali su cui inciampa o eccelle.",
+      "student_feedback": "Feedback per lo studente con METODOLOGIA SANDWICH rigorosa. Tono pacato, sobrio, equilibrato e non enfatico (evita eccessi di entusiasmo, punti esclamativi forzati e complimenti artificiali).\\n\\nStruttura richiesta esatta:\\n\\n🇮🇹 **Valutazione della sessione:**\\n- **Punto di forza:** Un aspetto specifico che ha gestito bene o un'espressione usata correttamente.\\n- **Aspetto da migliorare:** Un errore chiaro, una lacuna grammaticale o un'abitudine linguistica da correggere.\\n- **Prossimo passo:** Un consiglio pratico e costruttivo per la prossima volta.\\n\\n🇬🇧 **Session feedback:**\\n- **Strength:** (Traduzione fedele del punto di forza)\\n- **Area for improvement:** (Traduzione fedele dell'aspetto da migliorare)\\n- **Next step:** (Traduzione fedele del consiglio pratico)"
     }}
     """
     
-    excel_note = "Sessione svolta regolarmente."
-    student_display_text = "Ottima pratica oggi! Continua così!"
+    excel_note = "Sessione monitorata."
+    student_display_text = "Sessione conclusa regolarmente."
     
     try:
         res = model.generate_content(prompt_sintesi)
@@ -56,8 +61,8 @@ def salva_sessione_su_sheet(student_name, message_count, activity, messages_list
         excel_note = parsed.get("excel_summary", excel_note)
         student_display_text = parsed.get("student_feedback", student_display_text)
     except Exception:
-        excel_note = f"Sessione con {message_count} interazioni sull'attività {activity}."
-        student_display_text = "🇮🇹 **Ottima sessione!**\nHai fatto una bella pratica oggi. Rivedi i verbi e il vocabolario nuovo!\n\n🇬🇧 **Great session!**\nYou had great practice today. Review new verbs and vocabulary!"
+        excel_note = f"Sessione di {message_count} interazioni ({activity}). Necessaria revisione manuale."
+        student_display_text = "🇮🇹 **Valutazione della sessione:**\n- **Punto di forza:** Partecipazione attiva.\n- **Aspetto da migliorare:** Verifica dell'accuratezza verbale.\n- **Prossimo passo:** Rivedere le strutture affrontate oggi.\n\n🇬🇧 **Session feedback:**\n- **Strength:** Active engagement.\n- **Area for improvement:** Check verbal accuracy.\n- **Next step:** Review the structures covered today."
 
     payload = {
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -131,7 +136,7 @@ if student_name:
         else:
             st.success(f"Benvenuto, {student_name}! Pronto a fare pratica?")
 
-        # Scelta modalità (senza selezione predefinita)
+        # Scelta modalità
         attivita = st.radio(
             "Scegli cosa ti piacerebbe fare oggi:",
             [
@@ -152,18 +157,19 @@ if student_name:
 
         st.session_state.modalita_attivita = attivita
         is_voice_mode = "1. Conversazione" in attivita
+        progressi_passati = dati_studente.get('Ultimi Progressi', 'Nessuna sessione registrata finora')
 
         system_prompt = f"""
         # ITALIANO | TUTOR PERSONALE — ISTRUZIONI PRINCIPALI
         Ti chiami Alessandro. Sei il tutor personale di italiano e partner di conversazione dello studente {student_name}.
         
         [MODALITÀ SCELTA DALLO STUDENTE: {attivita}]
-        - Se lo studente ha scelto "🎲 Scegli tu!", decidi tu con entusiasmo cosa fare oggi in base al suo livello, alla progressione del syllabus e ai suoi punti di miglioramento.
-        - Quando avvii la sessione, esordisci con un saluto caloroso e poni subito UNA domanda aperta e stimolante per avviare l'attività scelta.
+        - Se lo studente ha scelto "🎲 Scegli tu!", decidi tu con chiarezza cosa fare oggi in base al suo livello, alla progressione del syllabus e ai suoi punti di miglioramento.
+        - Quando avvii la sessione, esordisci con un saluto naturale e poni subito UNA domanda aperta e mirata per avviare l'attività scelta.
         
         [REGOLE FORMATTAZIONE RISPOSTA]
         - Non inserire MAI timestamp o riferimenti orari (es. NON scrivere MAI "00:03", "00:06").
-        - Scrivi risposte fluide, naturali ed empatiche.
+        - Scrivi risposte sobrie, realistiche, fluide ed empatiche. Evita l'entusiasmo forzato o elogi continui.
         
         [DATI DELLO STUDENTE DA NON INVENTARE]
         - Livello stimato: {dati_studente.get('Livello', 'Non specificato')}
@@ -171,12 +177,12 @@ if student_name:
         - Motivazione: {dati_studente.get('Reason to learn', 'Migliorare l italiano')}
         - Punti di miglioramento ed errori: {dati_studente.get('Punti di miglioramento', 'Nessuno specifico')}
         - Documento di teoria attuale: {dati_studente.get('Documento Teoria', 'Nessuno')}
-        - Ultima sessione svolta: {dati_studente.get('Ultimi Progressi', 'Nessuna sessione registrata finora')}
+        - Ultima sessione svolta: {progressi_passati}
         
         [IMPORTANTE: PROGRESSIONE DIDATTICA E SYLLABUS]
         I documenti di teoria del tuo corso sono numerati in ordine progressivo da 01 a 12. Il "Documento di teoria attuale" indicato qui sopra rappresenta il punto esatto a cui siete arrivati.
         Questo significa che lo studente ha già studiato, fatto esercizi e conosce gli argomenti di TUTTI i documenti precedenti. 
-        Usa questa preziosa informazione per calibrare i vocaboli e la grammatica. Non usare MAI forme grammaticali di documenti successivi a quello attuale.
+        Usa questa informazione per calibrare vocaboli e grammatica. Non usare MAI forme grammaticali di documenti successivi a quello attuale.
         
         INDICE DEL CORSO COMPLETO (Referenza per il Bot):
         Doc 01: Presentarsi, saluti formali/informali, nazionalità, aspetto fisico, professioni. Verbo Essere e Avere al Presente, Aggettivi possessivi.
@@ -193,9 +199,9 @@ if student_name:
         Doc 12: Avere un confronto culturale (lingua, abitudini). Indicativo trapassato prossimo. Forma Passiva. Aggettivi/Pronomi indefiniti. Avverbi rafforzativi. Connettivi logici (causa, conseguenza, contrasto).
         
         ## 1. IDENTITÀ E OBIETTIVO
-        L'obiettivo principale è sviluppare la capacità dello studente di comprendere e comunicare in italiano reale, naturale e quotidiano, privilegiando conversazione, comprensione orale, spontaneità e vocabolario attivo.
-        ## 2. LINGUA E STILE
-        Usa l'italiano come lingua principale. Sii naturale, amichevole, paziente e stimolante. Evita risposte prolisse.
+        Sviluppa la capacità di comunicare in italiano autentico. Privilegia spontaneità e comprensione.
+        ## 2. STILE DI CORREZIONE
+        Non elogiare artificialmente ogni risposta. Correggi in modo puntuale senza monologhi.
         """
         
         model = genai.GenerativeModel(
@@ -225,26 +231,28 @@ if student_name:
                     st.session_state.session_message_count, 
                     st.session_state.modalita_attivita, 
                     st.session_state.messages, 
-                    model
+                    model,
+                    progressi_passati
                 )
             st.session_state.feedback_to_show = feedback_studente
             st.session_state.messages = []
             st.session_state.session_message_count = 0
             st.info("È trascorsa più di 1 ora dall'ultimo accesso: sessione precedente salvata.")
 
-        # Sidebar con pulsante fine sessione
+        # Sidebar con metriche e salvataggio
         with st.sidebar:
             st.header("📊 La tua sessione")
             st.metric("Messaggi inviati", st.session_state.session_message_count)
             if st.button("🏁 Termina sessione e salva"):
                 if st.session_state.session_message_count > 0:
-                    with st.spinner("Salvataggio e analisi della sessione in corso..."):
+                    with st.spinner("Analisi e salvataggio in corso..."):
                         _, feedback_studente = salva_sessione_su_sheet(
                             student_name, 
                             st.session_state.session_message_count, 
                             st.session_state.modalita_attivita, 
                             st.session_state.messages, 
-                            model
+                            model,
+                            progressi_passati
                         )
                     st.session_state.feedback_to_show = feedback_studente
                     st.session_state.messages = []
@@ -252,21 +260,21 @@ if student_name:
                 else:
                     st.warning("Non ci sono ancora messaggi scambiati in questa sessione.")
 
-        # Mostra feedback di fine sessione
+        # Visualizzazione feedback a sandwich per lo studente
         if st.session_state.feedback_to_show:
-            st.success("🎉 **Sessione completata e salvata con successo!**")
-            with st.expander("📝 Leggi il resoconto del professor Alessandro", expanded=True):
+            st.success("Sessione completata e registrata.")
+            with st.expander("📝 Resoconto didattico di Alessandro", expanded=True):
                 st.markdown(st.session_state.feedback_to_show)
             if st.button("✨ Inizia una nuova sessione"):
                 st.session_state.feedback_to_show = None
                 st.rerun()
 
-        # Tasto per avviare la conversazione se la chat non è ancora partita
+        # Pulsante di avvio prima domanda
         if len(st.session_state.messages) == 0 and not st.session_state.feedback_to_show:
             st.write("---")
             if st.button("🚀 Inizia sessione con Alessandro"):
-                with st.spinner("Il professor Alessandro sta preparando la prima domanda..."):
-                    prompt_avvio = f"Lo studente ha scelto l'attività '{attivita}'. Avvia la sessione salutandolo calorosamente per nome e facendogli subito una prima domanda stimolante adatta al suo livello e all'attività scelta."
+                with st.spinner("Alessandro sta preparando la sessione..."):
+                    prompt_avvio = f"Lo studente ha scelto l'attività '{attivita}'. Avvia la sessione salutandolo in modo calmo e naturale per nome e facendogli subito UNA prima domanda precisa e stimolante adatta all'attività e al suo livello."
                     res_init = model.generate_content(prompt_avvio)
                     init_text = re.sub(r'\b\d{1,2}:\d{2}(?::\d{2})?\b', '', res_init.text).strip()
 
@@ -288,14 +296,14 @@ if student_name:
                     st.session_state.last_interaction_time = datetime.now()
                     st.rerun()
 
-        # Visualizza messaggi
+        # Visualizza cronologia messaggi
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
                 if msg.get("audio_bytes") and is_voice_mode:
                     st.audio(msg["audio_bytes"], format="audio/mp3")
 
-        # Input utente (attivo solo se la conversazione è già stata avviata)
+        # Chat input (attivo dopo l'avvio)
         if len(st.session_state.messages) > 0:
             audio_bytes = None
             if is_voice_mode:
@@ -332,6 +340,7 @@ if student_name:
 
                 st.session_state.messages.append({"role": "user", "content": user_display})
                 with st.chat_message("user"):
+                
                     st.markdown(user_display)
                     
                 try:
