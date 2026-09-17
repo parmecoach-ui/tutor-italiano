@@ -5,11 +5,13 @@ import requests
 import io
 import difflib
 import re
+import json
 from datetime import datetime
 from gtts import gTTS
 from audio_recorder_streamlit import audio_recorder
 
-st.set_page_config(page_title="Il tuo professore Alessandro online", page_icon="😊")
+# Configurazione della pagina (emoji dopo il testo)
+st.set_page_config(page_title="Il tuo professore Alessandro online 😊", page_icon="😊")
 
 def clean_text_for_speech(text):
     text = re.sub(r'\b\d{1,2}:\d{2}(?::\d{2})?\b', '', text)
@@ -19,42 +21,60 @@ def clean_text_for_speech(text):
     text = re.sub(r'\s+', ' ', text)
     return text.strip()
 
-# Funzione per inviare i dati a Google Sheets
+# Funzione per generare il doppio feedback e salvare su Google Sheets
 def salva_sessione_su_sheet(student_name, message_count, activity, messages_list, model):
     apps_script_url = st.secrets.get("APPS_SCRIPT_URL", None)
     if not apps_script_url or message_count <= 0:
-        return None
+        return None, None
 
     chat_transcript = "\n".join([f"{m['role']}: {m['content']}" for m in messages_list if "content" in m])
     
-    # Prompt per generare un riepilogo ultra-compatto bilingue (IT + EN)
     prompt_sintesi = f"""
-    Analizza questa sessione di italiano con lo studente {student_name}:
+    Analizza la seguente sessione didattica di italiano con lo studente {student_name}:
     {chat_transcript}
     
-    Genera un feedback brevissimo e motivante (massimo 4-5 righe in totale) strutturato esattamente così:
-    🇮🇹 **In breve**: 1-2 frasi sugli argomenti visti ed errori corretti.
-    🇬🇧 **Quick summary**: La traduzione fedele in inglese delle stesse frasi.
+    Genera due contenuti distinti e restituiscili rigorosamente in formato JSON valido:
+    {{
+      "excel_summary": "Sintesi tecnica e concisa (massimo 2-3 righe) SOLO in italiano per il registro del professore: argomenti trattati, errori grammaticali/lessicali specifici emersi e punti di forza dimostrati.",
+      "student_feedback": "Messaggio caloroso, incoraggiante ed empatico per lo studente. Deve valorizzare i progressi fatti durante la sessione ma anche indicare con delicatezza su cosa continuare a esercitarsi. Deve essere strutturato esattamente così:\\n\\n🇮🇹 **Il tuo feedback di oggi:**\\n(Testo incoraggiante in italiano con punti di forza ed elementi da migliorare)\\n\\n🇬🇧 **Your feedback today:**\\n(Traduzione fedele e naturale in inglese del testo sopra)"
+    }}
     """
+    
+    excel_note = "Sessione svolta regolarmente."
+    student_display_text = "Ottima pratica oggi! Continua così!"
+    
     try:
         res = model.generate_content(prompt_sintesi)
-        summary_text = res.text.strip()
+        raw_res = res.text.strip()
+        
+        if raw_res.startswith("```json"):
+            raw_res = raw_res[7:]
+        if raw_res.startswith("```"):
+            raw_res = raw_res[3:]
+        if raw_res.endswith("```"):
+            raw_res = raw_res[:-3]
+            
+        parsed = json.loads(raw_res.strip())
+        excel_note = parsed.get("excel_summary", excel_note)
+        student_display_text = parsed.get("student_feedback", student_display_text)
     except Exception:
-        summary_text = "🇮🇹 Sessione completata.\n🇬🇧 Session completed."
+        excel_note = f"Sessione con {message_count} interazioni sull'attività {activity}."
+        student_display_text = "🇮🇹 **Ottima sessione!**\nHai fatto una bella pratica oggi. Rivedi i verbi e il vocabolario nuovo!\n\n🇬🇧 **Great session!**\nYou had great practice today. Review new verbs and vocabulary!"
 
     payload = {
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "student": student_name,
         "message_count": message_count,
         "activity": activity,
-        "summary": summary_text
+        "summary": excel_note
     }
     
     try:
         requests.post(apps_script_url, json=payload, timeout=8)
-        return summary_text
     except Exception:
-        return None
+        pass
+        
+    return excel_note, student_display_text
 
 # 1. Configurazione API
 try:
@@ -66,7 +86,7 @@ except Exception:
 # 2. Caricamento Dati
 CSV_URL = st.secrets.get(
     "SHEET_URL", 
-    "https://docs.google.com/spreadsheets/d/1bEHnFNXYo5CGeDhHlKq23m8C8mDEW8s_TTZz7ZccjTk/export?format=csv"
+    "[https://docs.google.com/spreadsheets/d/1bEHnFNXYo5CGeDhHlKq23m8C8mDEW8s_TTZz7ZccjTk/export?format=csv](https://docs.google.com/spreadsheets/d/1bEHnFNXYo5CGeDhHlKq23m8C8mDEW8s_TTZz7ZccjTk/export?format=csv)"
 )
 
 try:
@@ -84,7 +104,8 @@ except Exception as e:
     st.error(f"Errore caricamento dati: {e}")
     st.stop()
 
-st.title("😊 Il tuo professore Alessandro online")
+# Titolo principale con emoji alla fine
+st.title("Il tuo professore Alessandro online 😊")
 
 # 3. Interfaccia Identificazione
 student_name_input = st.text_input("Inserisci il tuo nome per iniziare:")
@@ -113,7 +134,7 @@ if student_name:
         else:
             st.success(f"Benvenuto, {student_name}! Pronto a fare pratica?")
 
-        # Scelta modalità
+        # Scelta modalità con l'aggiunta di '🎲 Scegli tu!'
         if "modalita_attivita" not in st.session_state:
             st.session_state.modalita_attivita = "💬 1. Conversazione (con Voce)"
 
@@ -124,7 +145,8 @@ if student_name:
                 "📚 2. Lezione / Grammatica (Solo Testo)",
                 "🔄 3. Revisione (Solo Testo)",
                 "🗣️ 4. Role-play (Solo Testo)",
-                "✍️ Altro / Esercizi (Solo Testo)"
+                "✍️ Altro / Esercizi (Solo Testo)",
+                "🎲 Scegli tu!"
             ],
             horizontal=True
         )
@@ -134,6 +156,9 @@ if student_name:
         system_prompt = f"""
         # ITALIANO | TUTOR PERSONALE — ISTRUZIONI PRINCIPALI
         Ti chiami Alessandro. Sei il tutor personale di italiano e partner di conversazione dello studente {student_name}.
+        
+        [MODALITÀ SCELTA DALLO STUDENTE: {attivita}]
+        Se lo studente ha scelto "🎲 Scegli tu!", decidi tu con entusiasmo cosa fare oggi in base al suo livello, alla progressione del syllabus e ai suoi punti di miglioramento.
         
         [REGOLE FORMATTAZIONE RISPOSTA]
         - Non inserire MAI timestamp o riferimenti orari (es. NON scrivere MAI "00:03", "00:06").
@@ -169,7 +194,7 @@ if student_name:
         ## 1. IDENTITÀ E OBIETTIVO
         L'obiettivo principale è sviluppare la capacità dello studente di comprendere e comunicare in italiano reale, naturale e quotidiano, privilegiando conversazione, comprensione orale, spontaneità e vocabolario attivo.
         ## 2. LINGUA E STILE
-        Usa l'italiano come lingua principale. Sii naturale, amichevole, paziente e stimolante. Evita risposte eccessivamente lunghe.
+        Usa l'italiano come lingua principale. Sii naturale, amichevole, paziente e stimolante. Evita risposte prolisse.
         """
         
         model = genai.GenerativeModel(
@@ -185,6 +210,8 @@ if student_name:
             st.session_state.session_message_count = 0
         if "last_audio_processed" not in st.session_state:
             st.session_state.last_audio_processed = None
+        if "feedback_to_show" not in st.session_state:
+            st.session_state.feedback_to_show = None
 
         # Controllo inattività > 1 ora
         adesso = datetime.now()
@@ -192,38 +219,46 @@ if student_name:
         
         if tempo_trascorso > 3600 and st.session_state.session_message_count > 0:
             with st.spinner("Archivio la sessione precedente..."):
-                salva_sessione_su_sheet(
+                _, feedback_studente = salva_sessione_su_sheet(
                     student_name, 
                     st.session_state.session_message_count, 
                     st.session_state.modalita_attivita, 
                     st.session_state.messages, 
                     model
                 )
+            st.session_state.feedback_to_show = feedback_studente
             st.session_state.messages = []
             st.session_state.session_message_count = 0
-            st.info("È trascorsa più di 1 ora dall'ultimo accesso: i progressi precedenti sono stati registrati. Nuova sessione avviata!")
+            st.info("È trascorsa più di 1 ora dall'ultimo accesso: sessione precedente salvata.")
 
-        # Sidebar con statistiche e pulsante fine sessione
+        # Sidebar con pulsante fine sessione
         with st.sidebar:
             st.header("📊 La tua sessione")
             st.metric("Messaggi inviati", st.session_state.session_message_count)
             if st.button("🏁 Termina sessione e salva"):
                 if st.session_state.session_message_count > 0:
-                    with st.spinner("Salvataggio su Google Sheets in corso..."):
-                        sintesi = salva_sessione_su_sheet(
+                    with st.spinner("Salvataggio e analisi della sessione in corso..."):
+                        _, feedback_studente = salva_sessione_su_sheet(
                             student_name, 
                             st.session_state.session_message_count, 
                             st.session_state.modalita_attivita, 
                             st.session_state.messages, 
                             model
                         )
-                    st.success("Sessione salvata con successo!")
-                    if sintesi:
-                        st.markdown(sintesi)
+                    st.session_state.feedback_to_show = feedback_studente
                     st.session_state.messages = []
                     st.session_state.session_message_count = 0
                 else:
                     st.warning("Non ci sono ancora messaggi scambiati in questa sessione.")
+
+        # Mostra il riquadro di feedback per lo studente se ha terminato la sessione
+        if st.session_state.feedback_to_show:
+            st.success("🎉 **Sessione completata e salvata con successo!**")
+            with st.expander("📝 Leggi il resoconto del professor Alessandro", expanded=True):
+                st.markdown(st.session_state.feedback_to_show)
+            if st.button("✨ Inizia una nuova sessione"):
+                st.session_state.feedback_to_show = None
+                st.rerun()
 
         # Visualizza messaggi
         for msg in st.session_state.messages:
@@ -261,6 +296,7 @@ if student_name:
             ]
 
         if user_display and payload_parts:
+            st.session_state.feedback_to_show = None
             st.session_state.last_interaction_time = datetime.now()
             st.session_state.session_message_count += 1
 
