@@ -3,8 +3,9 @@ import google.generativeai as genai
 import pandas as pd
 import requests
 import io
+import difflib
 
-st.set_page_config(page_title="Il tuo professore Alessandro online", page_icon="🤖")
+st.set_page_config(page_title="Il tuo professor Alessandro online", page_icon="😊")
 
 # 1. Configurazione API
 try:
@@ -13,8 +14,11 @@ except Exception as e:
     st.error("Errore di sistema con la chiave API. Controlla i Secrets su Streamlit.")
     st.stop()
 
-# 2. Caricamento Dati
-CSV_URL = "https://docs.google.com/spreadsheets/d/1bEHnFNXYo5CGeDhHlKq23m8C8mDEW8s_TTZz7ZccjTk/export?format=csv"
+# 2. Caricamento Dati (letto in modo sicuro dai Secrets)
+CSV_URL = st.secrets.get(
+    "SHEET_URL", 
+    "https://docs.google.com/spreadsheets/d/1bEHnFNXYo5CGeDhHlKq23m8C8mDEW8s_TTZz7ZccjTk/export?format=csv"
+)
 
 try:
     r = requests.get(CSV_URL)
@@ -23,18 +27,19 @@ try:
         st.error("Google sta bloccando il file.")
         st.stop()
         
-    # LA SOLUZIONE ALL'ERRORE È QUI (dtype=str): Leggiamo tutto come testo!
     students_df = pd.read_csv(io.StringIO(r.text), dtype=str)
     students_df.columns = students_df.columns.str.strip() 
+    students_df.fillna("Non specificato", inplace=True)
     students_df.set_index('Student', inplace=True)
 except Exception as e:
     st.error(f"Errore caricamento dati: {e}")
     st.stop()
 
-st.title("🤖 Il tuo professore Alessandro online")
+st.title("😊 Il tuo professor Alessandro online")
 
 # 3. Interfaccia
-student_name = st.text_input("Inserisci il tuo nome per iniziare:")
+student_name_input = st.text_input("Inserisci il tuo nome per iniziare:")
+student_name = student_name_input.strip()
 
 if student_name:
     if student_name in students_df.index:
@@ -51,7 +56,7 @@ if student_name:
             )
             
             if scelta_nazione == "Seleziona...":
-                st.stop() # L'app si ferma qui finché non fa la scelta
+                st.stop()
             else:
                 dati_studente = dati_studente[dati_studente['Country of Residence'] == scelta_nazione].iloc[0]
         # -------------------------------
@@ -63,7 +68,7 @@ if student_name:
         else:
             st.success(f"Benvenuto, {student_name}! Pronto a fare pratica?")
         
-        # IL NUOVO CERVELLO CON SYLLABUS COMPLETO (Doc 01 - 12)
+        # SYSTEM PROMPT CON SYLLABUS COMPLETO (Doc 01 - 12)
         system_prompt = f"""
         # ITALIANO | TUTOR PERSONALE — ISTRUZIONI PRINCIPALI
         Ti chiami Alessandro. Sei il tutor personale di italiano e partner di conversazione dello studente {student_name}.
@@ -81,15 +86,15 @@ if student_name:
         Usa questa preziosa informazione per calibrare i vocaboli e la grammatica. Non usare MAI forme grammaticali di documenti successivi a quello attuale.
         
         INDICE DEL CORSO COMPLETO (Referenza per il Bot):
-        Doc 1: Presentarsi, saluti formali/informali, nazionalità, aspetto fisico, professioni. Verbo Essere e Avere al Presente, Aggettivi possessivi.
-        Doc 2: Ordinare al bar/ristorante, routine quotidiana, casa, sport, giorni, stagioni. Numeri 0-20. Verbi regolari (-are, -ere, -ire), Verbi modali (volere, potere, dovere), verbi Andare/Fare al Presente. Verbi riflessivi, Frase negativa.
-        Doc 3: Indicazioni in città, acquisti, iscrizioni. Numeri 21-100. Articoli determinativi. Passato Prossimo (con Avere ed Essere), Participio Passato regolare e irregolare. Verbi a struttura invertita (es. Piacere, Mancare).
-        Doc 4: Famiglia, amici e relazioni sociali. Pronomi interrogativi, uso di "Che". Articoli indeterminativi. Condizionale Presente e Condizionale Passato.
-        Doc 5: Chiacchierare (meteo, tempo), mesi dell'anno. Avverbi e Preposizioni di luogo. Futuro semplice e altre forme per il futuro (es. avere intenzione di, stare per).
-        Doc 6: Programmi per uscire a divertirsi (locali, ballare). Articolo determinativo (ripasso), Preposizioni semplici e articolate. Imperativo (regolare e modale). Pronomi personali diretti.
-        Doc 7: Avere una discussione (termini forti/calmi). Aggettivi qualificativi e dimostrativi. Articoli partitivi. Verbi in -isc.
-        Doc 8: Chiedere aiuto (emergenza, malore, incidenti). Avverbi/Preposizioni di tempo. Particelle "ci" e "ne". Indicativo imperfetto.
-        Doc 9: Passioni e hobby. Pronomi personali indiretti. Pronomi combinati. Presente progressivo. Gerundio. Struttura della frase italiana (posizione avverbi, pronomi, negazione).
+        Doc 01: Presentarsi, saluti formali/informali, nazionalità, aspetto fisico, professioni. Verbo Essere e Avere al Presente, Aggettivi possessivi.
+        Doc 02: Ordinare al bar/ristorante, routine quotidiana, casa, sport, giorni, stagioni. Numeri 0-20. Verbi regolari (-are, -ere, -ire), Verbi modali (volere, potere, dovere), verbi Andare/Fare al Presente. Verbi riflessivi, Frase negativa.
+        Doc 03: Indicazioni in città, acquisti, iscrizioni. Numeri 21-100. Articoli determinativi. Passato Prossimo (con Avere ed Essere), Participio Passato regolare e irregolare. Verbi a struttura invertita (es. Piacere, Mancare).
+        Doc 04: Famiglia, amici e relazioni sociali. Pronomi interrogativi, uso di "Che". Articoli indeterminativi. Condizionale Presente e Condizionale Passato.
+        Doc 05: Chiacchierare (meteo, tempo), mesi dell'anno. Avverbi e Preposizioni di luogo. Futuro semplice e altre forme per il futuro (es. avere intenzione di, stare per).
+        Doc 06: Programmi per uscire a divertirsi (locali, ballare). Articolo determinativo (ripasso), Preposizioni semplici e articolate. Imperativo (regolare e modale). Pronomi personali diretti.
+        Doc 07: Avere una discussione (termini forti/calmi). Aggettivi qualificativi e dimostrativi. Articoli partitivi. Verbi in -isc.
+        Doc 08: Chiedere aiuto (emergenza, malore, incidenti). Avverbi/Preposizioni di tempo. Particelle "ci" e "ne". Indicativo imperfetto.
+        Doc 09: Passioni e hobby. Pronomi personali indiretti. Pronomi combinati. Presente progressivo. Gerundio. Struttura della frase italiana (posizione avverbi, pronomi, negazione).
         Doc 10: Raccontare esperienze personali (emozioni, viaggi, traumi). Congiuntivo presente. Congiuntivo passato. Comparativi e superlativi. Differenza tra migliore/meglio, peggiore/peggio.
         Doc 11: Dare la propria opinione (concordare/discordare). Congiuntivo imperfetto. Congiuntivo trapassato. Periodo ipotetico (1, 2, 3 tipo e misto). Verbi pronominali. Forma impersonale con "si".
         Doc 12: Avere un confronto culturale (lingua, abitudini). Indicativo trapassato prossimo. Forma Passiva. Aggettivi/Pronomi indefiniti. Avverbi rafforzativi. Connettivi logici (causa, conseguenza, contrasto).
@@ -199,4 +204,11 @@ if student_name:
                 st.session_state.messages.pop()
 
     else:
-        st.warning("Nome non trovato. Nomi validi presenti nel database: " + ", ".join(students_df.index.unique().astype(str).tolist()))
+        # --- RICERCA NOMI SIMILI (PRIVACY PROTETTA) ---
+        tutti_nomi = students_df.index.unique().dropna().astype(str).tolist()
+        simili = difflib.get_close_matches(student_name, tutti_nomi, n=2, cutoff=0.6)
+        
+        if simili:
+            st.warning(f"Nome non trovato. Forse intendevi: **{', '.join(simili)}**?")
+        else:
+            st.warning("Nome non trovato nel registro. Controlla come lo hai scritto o contatta il professor Alessandro!")
