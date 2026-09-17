@@ -19,29 +19,28 @@ def clean_text_for_speech(text):
     text = re.sub(r'\s+', ' ', text)
     return text.strip()
 
-# Funzione per inviare i progressi a Google Sheets
+# Funzione per inviare i dati a Google Sheets
 def salva_sessione_su_sheet(student_name, message_count, activity, messages_list, model):
     apps_script_url = st.secrets.get("APPS_SCRIPT_URL", None)
     if not apps_script_url or message_count <= 0:
         return None
 
-    # Chiede a Gemini una sintesi strutturata dei progressi didattici
     chat_transcript = "\n".join([f"{m['role']}: {m['content']}" for m in messages_list if "content" in m])
+    
+    # Prompt per generare un riepilogo ultra-compatto bilingue (IT + EN)
     prompt_sintesi = f"""
-    Analizza brevemente questa conversazione didattica di italiano con lo studente {student_name}:
+    Analizza questa sessione di italiano con lo studente {student_name}:
     {chat_transcript}
     
-    Genera un riassunto di massimo 3 righe che sintetizzi:
-    - Argomenti trattati
-    - Errori ricorrenti emersi
-    - Punti di forza dimostrati
-    Usa uno stile conciso, chiaro e professionale per il registro del professore.
+    Genera un feedback brevissimo e motivante (massimo 4-5 righe in totale) strutturato esattamente così:
+    🇮🇹 **In breve**: 1-2 frasi sugli argomenti visti ed errori corretti.
+    🇬🇧 **Quick summary**: La traduzione fedele in inglese delle stesse frasi.
     """
     try:
         res = model.generate_content(prompt_sintesi)
         summary_text = res.text.strip()
     except Exception:
-        summary_text = "Sessione svolta regolarmente."
+        summary_text = "🇮🇹 Sessione completata.\n🇬🇧 Session completed."
 
     payload = {
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -146,6 +145,7 @@ if student_name:
         - Motivazione: {dati_studente.get('Reason to learn', 'Migliorare l italiano')}
         - Punti di miglioramento ed errori: {dati_studente.get('Punti di miglioramento', 'Nessuno specifico')}
         - Documento di teoria attuale: {dati_studente.get('Documento Teoria', 'Nessuno')}
+        - Ultima sessione svolta: {dati_studente.get('Ultimi Progressi', 'Nessuna sessione registrata finora')}
         
         [IMPORTANTE: PROGRESSIONE DIDATTICA E SYLLABUS]
         I documenti di teoria del tuo corso sono numerati in ordine progressivo da 01 a 12. Il "Documento di teoria attuale" indicato qui sopra rappresenta il punto esatto a cui siete arrivati.
@@ -177,7 +177,6 @@ if student_name:
             system_instruction=system_prompt
         )
 
-        # Inizializzazione variabili sessione
         if "messages" not in st.session_state:
             st.session_state.messages = []
         if "last_interaction_time" not in st.session_state:
@@ -187,12 +186,11 @@ if student_name:
         if "last_audio_processed" not in st.session_state:
             st.session_state.last_audio_processed = None
 
-        # Controllo inattività > 1 ora (3600 secondi)
+        # Controllo inattività > 1 ora
         adesso = datetime.now()
         tempo_trascorso = (adesso - st.session_state.last_interaction_time).total_seconds()
         
         if tempo_trascorso > 3600 and st.session_state.session_message_count > 0:
-            # Salva la vecchia sessione scaduta
             with st.spinner("Archivio la sessione precedente..."):
                 salva_sessione_su_sheet(
                     student_name, 
@@ -201,10 +199,9 @@ if student_name:
                     st.session_state.messages, 
                     model
                 )
-            # Reset per la nuova sessione
             st.session_state.messages = []
             st.session_state.session_message_count = 0
-            st.info("È trascorsa più di 1 ora dall'ultimo accesso: i progressi precedenti sono stati salvati su Fogli Google. Iniziamo una nuova sessione!")
+            st.info("È trascorsa più di 1 ora dall'ultimo accesso: i progressi precedenti sono stati registrati. Nuova sessione avviata!")
 
         # Sidebar con statistiche e pulsante fine sessione
         with st.sidebar:
@@ -220,15 +217,15 @@ if student_name:
                             st.session_state.messages, 
                             model
                         )
-                    st.success("Sessione salvata con successo nel registro del professor Alessandro!")
+                    st.success("Sessione salvata con successo!")
                     if sintesi:
-                        st.info(f"**I tuoi progressi oggi:**\n\n{sintesi}")
+                        st.markdown(sintesi)
                     st.session_state.messages = []
                     st.session_state.session_message_count = 0
                 else:
                     st.warning("Non ci sono ancora messaggi scambiati in questa sessione.")
 
-        # Visualizza messaggi della sessione corrente
+        # Visualizza messaggi
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
@@ -264,7 +261,6 @@ if student_name:
             ]
 
         if user_display and payload_parts:
-            # Aggiornamento timestamp e contatore
             st.session_state.last_interaction_time = datetime.now()
             st.session_state.session_message_count += 1
 
