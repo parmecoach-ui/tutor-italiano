@@ -10,12 +10,20 @@ from audio_recorder_streamlit import audio_recorder
 
 st.set_page_config(page_title="Il tuo professore Alessandro online", page_icon="😊")
 
-# Funzione per pulire il testo da leggere a voce (rimuove markdown, link ed emoji)
+# Funzione per rimuovere timestamp (es. 00:03, 01:20) e formattazione superflua
+def remove_timestamps(text):
+    # Rimuove pattern come 00:03, 0:03, 00:12:30
+    return re.sub(r'\b\d{1,2}:\d{2}(?::\d{2})?\b', '', text)
+
 def clean_text_for_speech(text):
+    text = remove_timestamps(text)
+    # Rimuove markdown e link
     text = re.sub(r'[*_#`~]', '', text)
     text = re.sub(r'\[.*?\]\(.*?\)', '', text)
-    # Rimuove emoji comuni per non farle leggere dal TTS
+    # Rimuove emoji e simboli grafici che causano pause o letture errate
     text = re.sub(r'[^\w\s,;.?!:\'\-—]', '', text)
+    # Compatta spazi multipli
+    text = re.sub(r'\s+', ' ', text)
     return text.strip()
 
 # 1. Configurazione API
@@ -76,10 +84,13 @@ if student_name:
         else:
             st.success(f"Benvenuto, {student_name}! Pronto a fare pratica?")
         
-        # System Prompt con Syllabus aggiornato
         system_prompt = f"""
         # ITALIANO | TUTOR PERSONALE — ISTRUZIONI PRINCIPALI
         Ti chiami Alessandro. Sei il tutor personale di italiano e partner di conversazione dello studente {student_name}.
+        
+        [REGOLE FORMATTAZIONE RISPOSTA]
+        - Non inserire MAI timestamp o riferimenti orari ai secondi dell'audio (es. NON scrivere MAI "00:03", "00:06", ecc.).
+        - Scrivi risposte fluide, naturali ed empatiche, adatte a essere lette o ascoltate.
         
         [DATI DELLO STUDENTE DA NON INVENTARE]
         - Livello stimato: {dati_studente.get('Livello', 'Non specificato')}
@@ -109,41 +120,8 @@ if student_name:
         
         ## 1. IDENTITÀ E OBIETTIVO
         L'obiettivo principale è sviluppare la capacità dello studente di comprendere e comunicare in italiano reale, naturale e quotidiano, privilegiando conversazione, comprensione orale, spontaneità e vocabolario attivo.
-        La grammatica è importante, ma è uno strumento al servizio della comunicazione, non il centro del percorso. Privilegia l'italiano contemporaneo e naturale. Quando utile, distingui: ❌ errato | ✅ corretto | 🇮🇹 più naturale/colloquiale.
-        Principi: prima comunica, poi correggi; comunicazione prima della perfezione; naturalità prima della traduzione letterale.
-        ## 2. LINGUA
-        Usa l'italiano come lingua principale per conversazioni, spiegazioni, correzioni, istruzioni ed esercizi. Usa l’inglese solo quando lo studente lo richiede espressamente. Se non comprende, prova prima a riformulare in italiano più semplice e a fornire esempi. Riduci progressivamente la dipendenza dalla traduzione.
-        ## 3. STILE
-        Sii naturale, amichevole, paziente e stimolante. Fai domande, lascia spazio allo studente per parlare ed evita monologhi o spiegazioni inutilmente lunghe. Non elogiare artificialmente ogni risposta. Adatta progressivamente vocabolario, velocità e complessità al livello dimostrato.
-        ## 4. AVVIO DELLA SESSIONE
-        Quando lo studente dice “Buongiorno, cominciamo!”, “Cominciamo!”, “Iniziamo!” o equivalente, presenta:
-        Cosa ti piacerebbe fare oggi?
-        1. 💬 Conversazione
-        2. 📚 Lezione
-        3. 🔄 Revisione
-        4. 🗣️ Role-play
-        5. 🧠 Vocabolario
-        6. ✍️ Correzione
-        7. 🎧 Ascolto
-        8. 🎯 Sfida
-        9. 🎲 Scegli tu!
-        Può rispondere con numero, nome o richiesta libera. Non ripetere il menu durante una sessione già in corso.
-        ## 5. CONVERSAZIONE E CORREZIONE
-        La conversazione è centrale. Privilegia temi e situazioni reali e stimola risposte spontanee e progressivamente più elaborate.
-        Usa correzione selettiva:
-        * errore piccolo che non compromette la comunicazione → continua e correggi eventualmente dopo;
-        * errore importante → correggi brevemente;
-        * errore ricorrente → correggi, spiega semplicemente e riproponilo successivamente;
-        * errore che cambia il significato → correggi subito.
-        Formato preferito:
-        Piccola correzione:
-        ❌ forma usata
-        ✅ forma corretta
-        Breve spiegazione in italiano.
-        🇮🇹 Più naturale: quando esiste una forma più comune.
-        Poi riprendi subito il dialogo.
-        ## 6. ROLE-PLAY, VOCABOLARIO E ADATTAMENTO
-        Adatta sempre vocabolario e complessità al livello dimostrato. Porta progressivamente lo studente a comprendere, pensare e comunicare in italiano senza dipendere dalla traduzione mentale in inglese.
+        ## 2. LINGUA E STILE
+        Usa l'italiano come lingua principale. Sii naturale, amichevole, paziente e stimolante. Non usare monologhi o spiegazioni prolisse.
         """
         
         model = genai.GenerativeModel(
@@ -154,14 +132,13 @@ if student_name:
         if "messages" not in st.session_state:
             st.session_state.messages = []
 
-        # Mostra cronologia messaggi e relativo audio se presente
+        # Render messaggi precedenti
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
                 if msg.get("audio_bytes"):
                     st.audio(msg["audio_bytes"], format="audio/mp3")
 
-        # Sezione Input: microfono e tastiera
         st.write("---")
         col_mic, col_txt = st.columns([1, 5])
         
@@ -173,16 +150,14 @@ if student_name:
                 icon_size="2x"
             )
 
-        text_input = st.chat_input("Scrivi qui oppure usa il microfono sopra...")
+        text_input = st.chat_input("Scrivi qui oppure usa il microfono...")
 
-        # Rileva se lo studente ha scritto o registrato un audio
         prompt_content = None
         if audio_bytes:
-            # Se ha registrato l'audio, passiamo l'audio a Gemini
             prompt_content = {
                 "parts": [
                     {"mime_type": "audio/wav", "data": audio_bytes},
-                    "Rispondi a quanto detto dall'utente in questo audio, mantenendo il tuo ruolo di tutor Alessandro."
+                    "Ascolta questo messaggio audio dello studente e rispondi come tutor Alessandro. NON inserire timestamp o marcatori temporali come 00:03 nella risposta."
                 ]
             }
             user_display = "🎤 *Messaggio vocale inviato*"
@@ -196,7 +171,6 @@ if student_name:
                 st.markdown(user_display)
                 
             try:
-                # Costruisce la conversazione per Gemini
                 contents = []
                 for m in st.session_state.messages[:-1]:
                     ruolo = "model" if m["role"] == "model" else "user"
@@ -208,13 +182,16 @@ if student_name:
                     contents.append({"role": "user", "parts": [prompt_content]})
                     
                 response = model.generate_content(contents)
-                bot_text = response.text
+                raw_text = response.text
 
-                # Generazione Audio della risposta (Text-to-Speech)
+                # Pulizia timestamp dal testo visualizzato
+                bot_text = remove_timestamps(raw_text).strip()
+
+                # Generazione Audio senza timestamp e senza caratteri che creano blocchi
                 clean_text = clean_text_for_speech(bot_text)
                 audio_buffer = io.BytesIO()
                 if clean_text:
-                    tts = gTTS(text=clean_text, lang='it')
+                    tts = gTTS(text=clean_text, lang='it', slow=False)
                     tts.write_to_fp(audio_buffer)
                     audio_buffer.seek(0)
                     bot_audio = audio_buffer.read()
