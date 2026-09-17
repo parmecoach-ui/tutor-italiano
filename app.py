@@ -5,12 +5,12 @@ import requests
 import io
 import difflib
 import re
+from datetime import datetime
 from gtts import gTTS
 from audio_recorder_streamlit import audio_recorder
 
 st.set_page_config(page_title="Il tuo professore Alessandro online", page_icon="😊")
 
-# Funzione per pulire il testo per la voce
 def clean_text_for_speech(text):
     text = re.sub(r'\b\d{1,2}:\d{2}(?::\d{2})?\b', '', text)
     text = re.sub(r'[*_#`~]', '', text)
@@ -19,10 +19,48 @@ def clean_text_for_speech(text):
     text = re.sub(r'\s+', ' ', text)
     return text.strip()
 
+# Funzione per inviare i progressi a Google Sheets
+def salva_sessione_su_sheet(student_name, message_count, activity, messages_list, model):
+    apps_script_url = st.secrets.get("APPS_SCRIPT_URL", None)
+    if not apps_script_url or message_count <= 0:
+        return None
+
+    # Chiede a Gemini una sintesi strutturata dei progressi didattici
+    chat_transcript = "\n".join([f"{m['role']}: {m['content']}" for m in messages_list if "content" in m])
+    prompt_sintesi = f"""
+    Analizza brevemente questa conversazione didattica di italiano con lo studente {student_name}:
+    {chat_transcript}
+    
+    Genera un riassunto di massimo 3 righe che sintetizzi:
+    - Argomenti trattati
+    - Errori ricorrenti emersi
+    - Punti di forza dimostrati
+    Usa uno stile conciso, chiaro e professionale per il registro del professore.
+    """
+    try:
+        res = model.generate_content(prompt_sintesi)
+        summary_text = res.text.strip()
+    except Exception:
+        summary_text = "Sessione svolta regolarmente."
+
+    payload = {
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "student": student_name,
+        "message_count": message_count,
+        "activity": activity,
+        "summary": summary_text
+    }
+    
+    try:
+        requests.post(apps_script_url, json=payload, timeout=8)
+        return summary_text
+    except Exception:
+        return None
+
 # 1. Configurazione API
 try:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-except Exception as e:
+except Exception:
     st.error("Errore di sistema con la chiave API. Controlla i Secrets su Streamlit.")
     st.stop()
 
@@ -70,7 +108,6 @@ if student_name:
             else:
                 dati_studente = dati_studente[dati_studente['Country of Residence'] == scelta_nazione].iloc[0]
         
-        # Genere
         genere = dati_studente.get('Genere', 'M')
         if genere == 'F':
             st.success(f"Benvenuta, {student_name}! Pronta a fare pratica?")
@@ -132,21 +169,66 @@ if student_name:
         ## 1. IDENTITÀ E OBIETTIVO
         L'obiettivo principale è sviluppare la capacità dello studente di comprendere e comunicare in italiano reale, naturale e quotidiano, privilegiando conversazione, comprensione orale, spontaneità e vocabolario attivo.
         ## 2. LINGUA E STILE
-        Usa l'italiano come lingua principale. Sii naturale, amichevole, paziente e stimolante. Evita risposte eccessivamente lunghe per favorire lo scambio verbale.
+        Usa l'italiano come lingua principale. Sii naturale, amichevole, paziente e stimolante. Evita risposte eccessivamente lunghe.
         """
         
-        # OPZIONE 1: Modello con limiti gratuiti più ampi
         model = genai.GenerativeModel(
             model_name='gemini-3.5-flash-lite',
             system_instruction=system_prompt
         )
 
+        # Inizializzazione variabili sessione
         if "messages" not in st.session_state:
             st.session_state.messages = []
+        if "last_interaction_time" not in st.session_state:
+            st.session_state.last_interaction_time = datetime.now()
+        if "session_message_count" not in st.session_state:
+            st.session_state.session_message_count = 0
         if "last_audio_processed" not in st.session_state:
             st.session_state.last_audio_processed = None
 
-        # Visualizza messaggi
+        # Controllo inattività > 1 ora (3600 secondi)
+        adesso = datetime.now()
+        tempo_trascorso = (adesso - st.session_state.last_interaction_time).total_seconds()
+        
+        if tempo_trascorso > 3600 and st.session_state.session_message_count > 0:
+            # Salva la vecchia sessione scaduta
+            with st.spinner("Archivio la sessione precedente..."):
+                salva_sessione_su_sheet(
+                    student_name, 
+                    st.session_state.session_message_count, 
+                    st.session_state.modalita_attivita, 
+                    st.session_state.messages, 
+                    model
+                )
+            # Reset per la nuova sessione
+            st.session_state.messages = []
+            st.session_state.session_message_count = 0
+            st.info("È trascorsa più di 1 ora dall'ultimo accesso: i progressi precedenti sono stati salvati su Fogli Google. Iniziamo una nuova sessione!")
+
+        # Sidebar con statistiche e pulsante fine sessione
+        with st.sidebar:
+            st.header("📊 La tua sessione")
+            st.metric("Messaggi inviati", st.session_state.session_message_count)
+            if st.button("🏁 Termina sessione e salva"):
+                if st.session_state.session_message_count > 0:
+                    with st.spinner("Salvataggio su Google Sheets in corso..."):
+                        sintesi = salva_sessione_su_sheet(
+                            student_name, 
+                            st.session_state.session_message_count, 
+                            st.session_state.modalita_attivita, 
+                            st.session_state.messages, 
+                            model
+                        )
+                    st.success("Sessione salvata con successo nel registro del professor Alessandro!")
+                    if sintesi:
+                        st.info(f"**I tuoi progressi oggi:**\n\n{sintesi}")
+                    st.session_state.messages = []
+                    st.session_state.session_message_count = 0
+                else:
+                    st.warning("Non ci sono ancora messaggi scambiati in questa sessione.")
+
+        # Visualizza messaggi della sessione corrente
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
@@ -166,9 +248,7 @@ if student_name:
 
         text_input = st.chat_input("Scrivi qui la tua risposta...")
 
-        # OPZIONE 2: Singola chiamata ottimizzata (evita doppia chiamata per trascrizione)
         new_audio = (audio_bytes is not None and audio_bytes != st.session_state.last_audio_processed)
-        
         user_display = None
         payload_parts = None
 
@@ -184,12 +264,15 @@ if student_name:
             ]
 
         if user_display and payload_parts:
+            # Aggiornamento timestamp e contatore
+            st.session_state.last_interaction_time = datetime.now()
+            st.session_state.session_message_count += 1
+
             st.session_state.messages.append({"role": "user", "content": user_display})
             with st.chat_message("user"):
                 st.markdown(user_display)
                 
             try:
-                # Costruzione cronologia messaggi per Gemini
                 contents = []
                 for m in st.session_state.messages[:-1]:
                     ruolo = "model" if m["role"] == "model" else "user"
@@ -197,7 +280,6 @@ if student_name:
                 
                 contents.append({"role": "user", "parts": payload_parts})
                 
-                # Chiamata unica a Gemini
                 response = model.generate_content(contents)
                 raw_text = response.text
                 bot_text = re.sub(r'\b\d{1,2}:\d{2}(?::\d{2})?\b', '', raw_text).strip()
