@@ -10,7 +10,6 @@ from datetime import datetime
 from gtts import gTTS
 from audio_recorder_streamlit import audio_recorder
 
-# Configurazione della pagina (emoji dopo il testo)
 st.set_page_config(page_title="Il tuo professore Alessandro online 😊", page_icon="😊")
 
 def clean_text_for_speech(text):
@@ -21,7 +20,6 @@ def clean_text_for_speech(text):
     text = re.sub(r'\s+', ' ', text)
     return text.strip()
 
-# Funzione per generare il doppio feedback e salvare su Google Sheets
 def salva_sessione_su_sheet(student_name, message_count, activity, messages_list, model):
     apps_script_url = st.secrets.get("APPS_SCRIPT_URL", None)
     if not apps_script_url or message_count <= 0:
@@ -104,7 +102,6 @@ except Exception as e:
     st.error(f"Errore caricamento dati: {e}")
     st.stop()
 
-# Titolo principale con emoji alla fine
 st.title("Il tuo professore Alessandro online 😊")
 
 # 3. Interfaccia Identificazione
@@ -134,12 +131,9 @@ if student_name:
         else:
             st.success(f"Benvenuto, {student_name}! Pronto a fare pratica?")
 
-        # Scelta modalità con l'aggiunta di '🎲 Scegli tu!'
-        if "modalita_attivita" not in st.session_state:
-            st.session_state.modalita_attivita = "💬 1. Conversazione (con Voce)"
-
+        # Scelta modalità (senza selezione predefinita)
         attivita = st.radio(
-            "Scegli cosa vuoi fare:",
+            "Scegli cosa ti piacerebbe fare oggi:",
             [
                 "💬 1. Conversazione (con Voce)",
                 "📚 2. Lezione / Grammatica (Solo Testo)",
@@ -148,8 +142,14 @@ if student_name:
                 "✍️ Altro / Esercizi (Solo Testo)",
                 "🎲 Scegli tu!"
             ],
+            index=None,
             horizontal=True
         )
+
+        if not attivita:
+            st.info("👆 Seleziona un'opzione qui sopra per iniziare.")
+            st.stop()
+
         st.session_state.modalita_attivita = attivita
         is_voice_mode = "1. Conversazione" in attivita
 
@@ -158,7 +158,8 @@ if student_name:
         Ti chiami Alessandro. Sei il tutor personale di italiano e partner di conversazione dello studente {student_name}.
         
         [MODALITÀ SCELTA DALLO STUDENTE: {attivita}]
-        Se lo studente ha scelto "🎲 Scegli tu!", decidi tu con entusiasmo cosa fare oggi in base al suo livello, alla progressione del syllabus e ai suoi punti di miglioramento.
+        - Se lo studente ha scelto "🎲 Scegli tu!", decidi tu con entusiasmo cosa fare oggi in base al suo livello, alla progressione del syllabus e ai suoi punti di miglioramento.
+        - Quando avvii la sessione, esordisci con un saluto caloroso e poni subito UNA domanda aperta e stimolante per avviare l'attività scelta.
         
         [REGOLE FORMATTAZIONE RISPOSTA]
         - Non inserire MAI timestamp o riferimenti orari (es. NON scrivere MAI "00:03", "00:06").
@@ -251,7 +252,7 @@ if student_name:
                 else:
                     st.warning("Non ci sono ancora messaggi scambiati in questa sessione.")
 
-        # Mostra il riquadro di feedback per lo studente se ha terminato la sessione
+        # Mostra feedback di fine sessione
         if st.session_state.feedback_to_show:
             st.success("🎉 **Sessione completata e salvata con successo!**")
             with st.expander("📝 Leggi il resoconto del professor Alessandro", expanded=True):
@@ -260,6 +261,33 @@ if student_name:
                 st.session_state.feedback_to_show = None
                 st.rerun()
 
+        # Tasto per avviare la conversazione se la chat non è ancora partita
+        if len(st.session_state.messages) == 0 and not st.session_state.feedback_to_show:
+            st.write("---")
+            if st.button("🚀 Inizia sessione con Alessandro"):
+                with st.spinner("Il professor Alessandro sta preparando la prima domanda..."):
+                    prompt_avvio = f"Lo studente ha scelto l'attività '{attivita}'. Avvia la sessione salutandolo calorosamente per nome e facendogli subito una prima domanda stimolante adatta al suo livello e all'attività scelta."
+                    res_init = model.generate_content(prompt_avvio)
+                    init_text = re.sub(r'\b\d{1,2}:\d{2}(?::\d{2})?\b', '', res_init.text).strip()
+
+                    init_audio = None
+                    if is_voice_mode:
+                        clean_text = clean_text_for_speech(init_text)
+                        if clean_text:
+                            audio_buffer = io.BytesIO()
+                            tts = gTTS(text=clean_text, lang='it', slow=False)
+                            tts.write_to_fp(audio_buffer)
+                            audio_buffer.seek(0)
+                            init_audio = audio_buffer.read()
+
+                    st.session_state.messages.append({
+                        "role": "model",
+                        "content": init_text,
+                        "audio_bytes": init_audio
+                    })
+                    st.session_state.last_interaction_time = datetime.now()
+                    st.rerun()
+
         # Visualizza messaggi
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]):
@@ -267,79 +295,81 @@ if student_name:
                 if msg.get("audio_bytes") and is_voice_mode:
                     st.audio(msg["audio_bytes"], format="audio/mp3")
 
-        audio_bytes = None
-        if is_voice_mode:
-            st.write("---")
-            st.caption("🎙️ Parla con il microfono oppure scrivi sotto:")
-            audio_bytes = audio_recorder(
-                text="Premi per parlare",
-                recording_color="#e74c3c",
-                neutral_color="#2ecc71",
-                icon_size="2x"
-            )
+        # Input utente (attivo solo se la conversazione è già stata avviata)
+        if len(st.session_state.messages) > 0:
+            audio_bytes = None
+            if is_voice_mode:
+                st.write("---")
+                st.caption("🎙️ Parla con il microfono oppure scrivi sotto:")
+                audio_bytes = audio_recorder(
+                    text="Premi per parlare",
+                    recording_color="#e74c3c",
+                    neutral_color="#2ecc71",
+                    icon_size="2x"
+                )
 
-        text_input = st.chat_input("Scrivi qui la tua risposta...")
+            text_input = st.chat_input("Scrivi qui la tua risposta...")
 
-        new_audio = (audio_bytes is not None and audio_bytes != st.session_state.last_audio_processed)
-        user_display = None
-        payload_parts = None
+            new_audio = (audio_bytes is not None and audio_bytes != st.session_state.last_audio_processed)
+            user_display = None
+            payload_parts = None
 
-        if text_input:
-            user_display = text_input
-            payload_parts = [text_input]
-        elif new_audio:
-            st.session_state.last_audio_processed = audio_bytes
-            user_display = "🎤 *Messaggio vocale inviato*"
-            payload_parts = [
-                {"mime_type": "audio/wav", "data": audio_bytes},
-                "Ascolta questo audio e rispondi direttamente come tutor Alessandro. Non inserire timestamp."
-            ]
+            if text_input:
+                user_display = text_input
+                payload_parts = [text_input]
+            elif new_audio:
+                st.session_state.last_audio_processed = audio_bytes
+                user_display = "🎤 *Messaggio vocale inviato*"
+                payload_parts = [
+                    {"mime_type": "audio/wav", "data": audio_bytes},
+                    "Ascolta questo audio e rispondi direttamente come tutor Alessandro. Non inserire timestamp."
+                ]
 
-        if user_display and payload_parts:
-            st.session_state.feedback_to_show = None
-            st.session_state.last_interaction_time = datetime.now()
-            st.session_state.session_message_count += 1
+            if user_display and payload_parts:
+                st.session_state.feedback_to_show = None
+                st.session_state.last_interaction_time = datetime.now()
+                st.session_state.session_message_count += 1
 
-            st.session_state.messages.append({"role": "user", "content": user_display})
-            with st.chat_message("user"):
-                st.markdown(user_display)
-                
-            try:
-                contents = []
-                for m in st.session_state.messages[:-1]:
-                    ruolo = "model" if m["role"] == "model" else "user"
-                    contents.append({"role": ruolo, "parts": [m["content"]]})
-                
-                contents.append({"role": "user", "parts": payload_parts})
-                
-                response = model.generate_content(contents)
-                raw_text = response.text
-                bot_text = re.sub(r'\b\d{1,2}:\d{2}(?::\d{2})?\b', '', raw_text).strip()
+                st.session_state.messages.append({"role": "user", "content": user_display})
+                with st.chat_message("user"):
+                    st.markdown(user_display)
+                    
+                try:
+                    contents = []
+                    for m in st.session_state.messages[:-1]:
+                        ruolo = "model" if m["role"] == "model" else "user"
+                        contents.append({"role": ruolo, "parts": [m["content"]]})
+                    
+                    contents.append({"role": "user", "parts": payload_parts})
+                    
+                    response = model.generate_content(contents)
+                    raw_text = response.text
+                    bot_text = re.sub(r'\b\d{1,2}:\d{2}(?::\d{2})?\b', '', raw_text).strip()
 
-                bot_audio = None
-                if is_voice_mode:
-                    clean_text = clean_text_for_speech(bot_text)
-                    if clean_text:
-                        audio_buffer = io.BytesIO()
-                        tts = gTTS(text=clean_text, lang='it', slow=False)
-                        tts.write_to_fp(audio_buffer)
-                        audio_buffer.seek(0)
-                        bot_audio = audio_buffer.read()
+                    bot_audio = None
+                    if is_voice_mode:
+                        clean_text = clean_text_for_speech(bot_text)
+                        if clean_text:
+                            audio_buffer = io.BytesIO()
+                            tts = gTTS(text=clean_text, lang='it', slow=False)
+                            tts.write_to_fp(audio_buffer)
+                            audio_buffer.seek(0)
+                            bot_audio = audio_buffer.read()
 
-                st.session_state.messages.append({
-                    "role": "model", 
-                    "content": bot_text,
-                    "audio_bytes": bot_audio
-                })
+                    st.session_state.messages.append({
+                        "role": "model", 
+                        "content": bot_text,
+                        "audio_bytes": bot_audio
+                    })
 
-                with st.chat_message("model"):
-                    st.markdown(bot_text)
-                    if bot_audio and is_voice_mode:
-                        st.audio(bot_audio, format="audio/mp3")
+                    with st.chat_message("model"):
+                        st.markdown(bot_text)
+                        if bot_audio and is_voice_mode:
+                            st.audio(bot_audio, format="audio/mp3")
 
-            except Exception as e:
-                st.error(f"Errore Tecnico API: {e}")
-                st.session_state.messages.pop()
+                except Exception as e:
+                    st.error(f"Errore Tecnico API: {e}")
+                    st.session_state.messages.pop()
 
     else:
         tutti_nomi = students_df.index.unique().dropna().astype(str).tolist()
