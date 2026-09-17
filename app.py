@@ -10,16 +10,12 @@ from audio_recorder_streamlit import audio_recorder
 
 st.set_page_config(page_title="Il tuo professore Alessandro online", page_icon="😊")
 
-# Funzione per pulire il testo da leggere a voce in modo fluido
+# Funzione per pulire il testo per la voce
 def clean_text_for_speech(text):
-    # Rimuove eventuali timestamp residui
     text = re.sub(r'\b\d{1,2}:\d{2}(?::\d{2})?\b', '', text)
-    # Rimuove markdown, parentesi e link
     text = re.sub(r'[*_#`~]', '', text)
     text = re.sub(r'\[.*?\]\(.*?\)', '', text)
-    # Rimuove emoji e simboli insoliti
     text = re.sub(r'[^\w\s,;.?!:\'\-—àèéìòùÀÈÉÌÒÙ]', '', text)
-    # Normalizza gli spazi
     text = re.sub(r'\s+', ' ', text)
     return text.strip()
 
@@ -74,15 +70,14 @@ if student_name:
             else:
                 dati_studente = dati_studente[dati_studente['Country of Residence'] == scelta_nazione].iloc[0]
         
-        # Gestione del Genere
+        # Genere
         genere = dati_studente.get('Genere', 'M')
         if genere == 'F':
             st.success(f"Benvenuta, {student_name}! Pronta a fare pratica?")
         else:
             st.success(f"Benvenuto, {student_name}! Pronto a fare pratica?")
 
-        # --- SELETTORE ATTIVITÀ / MODALITÀ ---
-        # Permette di entrare o uscire dalla modalità vocale in modo trasparente
+        # Scelta modalità
         if "modalita_attivita" not in st.session_state:
             st.session_state.modalita_attivita = "💬 1. Conversazione (con Voce)"
 
@@ -105,8 +100,8 @@ if student_name:
         Ti chiami Alessandro. Sei il tutor personale di italiano e partner di conversazione dello studente {student_name}.
         
         [REGOLE FORMATTAZIONE RISPOSTA]
-        - Non inserire MAI timestamp o marcatori orari (es. NON scrivere MAI "00:03", "00:06").
-        - Scrivi risposte naturali, fluide ed empatiche, adatte alla conversazione parlata.
+        - Non inserire MAI timestamp o riferimenti orari (es. NON scrivere MAI "00:03", "00:06").
+        - Scrivi risposte fluide, naturali ed empatiche.
         
         [DATI DELLO STUDENTE DA NON INVENTARE]
         - Livello stimato: {dati_studente.get('Livello', 'Non specificato')}
@@ -137,11 +132,12 @@ if student_name:
         ## 1. IDENTITÀ E OBIETTIVO
         L'obiettivo principale è sviluppare la capacità dello studente di comprendere e comunicare in italiano reale, naturale e quotidiano, privilegiando conversazione, comprensione orale, spontaneità e vocabolario attivo.
         ## 2. LINGUA E STILE
-        Usa l'italiano come lingua principale. Sii naturale, amichevole, paziente e stimolante. Mantieni le risposte concise per stimolare il dialogo.
+        Usa l'italiano come lingua principale. Sii naturale, amichevole, paziente e stimolante. Evita risposte eccessivamente lunghe per favorire lo scambio verbale.
         """
         
+        # OPZIONE 1: Modello con limiti gratuiti più ampi
         model = genai.GenerativeModel(
-            model_name='gemini-1.5-flash',
+            model_name='gemini-3.5-flash-lite',
             system_instruction=system_prompt
         )
 
@@ -150,18 +146,17 @@ if student_name:
         if "last_audio_processed" not in st.session_state:
             st.session_state.last_audio_processed = None
 
-        # Mostra la cronologia messaggi
+        # Visualizza messaggi
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
                 if msg.get("audio_bytes") and is_voice_mode:
                     st.audio(msg["audio_bytes"], format="audio/mp3")
 
-        # Gestione input: microfono solo se in modalità voce
         audio_bytes = None
         if is_voice_mode:
             st.write("---")
-            st.caption("🎙️ Puoi parlare al microfono oppure scrivere qui sotto:")
+            st.caption("🎙️ Parla con il microfono oppure scrivi sotto:")
             audio_bytes = audio_recorder(
                 text="Premi per parlare",
                 recording_color="#e74c3c",
@@ -171,52 +166,43 @@ if student_name:
 
         text_input = st.chat_input("Scrivi qui la tua risposta...")
 
-        user_message_text = None
-
-        # RISOLUZIONE BUG MICROFONO:
-        # Controlliamo se c'è un nuovo audio diverso da quello già processato
-        new_audio_detected = (
-            audio_bytes is not None 
-            and audio_bytes != st.session_state.last_audio_processed
-        )
+        # OPZIONE 2: Singola chiamata ottimizzata (evita doppia chiamata per trascrizione)
+        new_audio = (audio_bytes is not None and audio_bytes != st.session_state.last_audio_processed)
+        
+        user_display = None
+        payload_parts = None
 
         if text_input:
-            # Se l'utente scrive, ha sempre la precedenza sul vecchio audio rimasto in memoria
-            user_message_text = text_input
-        elif new_audio_detected:
-            # Registriamo che questo audio è stato consumato
+            user_display = text_input
+            payload_parts = [text_input]
+        elif new_audio:
             st.session_state.last_audio_processed = audio_bytes
-            with st.spinner("Ascolto la tua voce..."):
-                try:
-                    # Trascriviamo prima l'audio con Gemini per avere il vero testo in cronologia
-                    transcribe_res = model.generate_content([
-                        {"mime_type": "audio/wav", "data": audio_bytes},
-                        "Trascrivi fedelmente solo le parole dette in italiano dall'utente in questo audio. Non aggiungere commenti."
-                    ])
-                    user_message_text = transcribe_res.text.strip()
-                    if not user_message_text:
-                        user_message_text = "(Audio registrato)"
-                except Exception:
-                    user_message_text = "(Audio registrato)"
+            user_display = "🎤 *Messaggio vocale inviato*"
+            payload_parts = [
+                {"mime_type": "audio/wav", "data": audio_bytes},
+                "Ascolta questo audio e rispondi direttamente come tutor Alessandro. Non inserire timestamp."
+            ]
 
-        if user_message_text:
-            st.session_state.messages.append({"role": "user", "content": user_message_text})
+        if user_display and payload_parts:
+            st.session_state.messages.append({"role": "user", "content": user_display})
             with st.chat_message("user"):
-                st.markdown(user_message_text)
+                st.markdown(user_display)
                 
             try:
-                # Costruisce la conversazione completa
+                # Costruzione cronologia messaggi per Gemini
                 contents = []
-                for m in st.session_state.messages:
+                for m in st.session_state.messages[:-1]:
                     ruolo = "model" if m["role"] == "model" else "user"
                     contents.append({"role": ruolo, "parts": [m["content"]]})
                 
+                contents.append({"role": "user", "parts": payload_parts})
+                
+                # Chiamata unica a Gemini
                 response = model.generate_content(contents)
                 raw_text = response.text
                 bot_text = re.sub(r'\b\d{1,2}:\d{2}(?::\d{2})?\b', '', raw_text).strip()
 
                 bot_audio = None
-                # Genera l'audio SOLO ed ESCLUSIVAMENTE se siamo in modalità conversazione vocale
                 if is_voice_mode:
                     clean_text = clean_text_for_speech(bot_text)
                     if clean_text:
