@@ -36,25 +36,20 @@ COUNTRY_TO_LANG = {
 }
 
 def clean_text_for_speech(text):
-    # Rimuove orari e marcatori Markdown
     text = re.sub(r'\b\d{1,2}:\d{2}(?::\d{2})?\b', '', text)
     text = re.sub(r'[*_#`~]', '', text)
     text = re.sub(r'\[.*?\]\(.*?\)', '', text)
-    # Riduciamo l'enfasi artificiale: niente doppi punti esclamativi, sostituiti da punto fermo o virgola
     text = re.sub(r'!{2,}', '.', text)
     text = re.sub(r'!\?', '?', text)
-    # Aggiunge una pausa alle virgole e liste
     text = re.sub(r'\n+', ', ', text)
     text = re.sub(r'[^\w\s,;.?!:\'\-—àèéìòùÀÈÉÌÒÙ]', '', text)
     text = re.sub(r'\s+', ' ', text)
     return text.strip()
 
-# Generazione audio neurale pacata (it-IT-GiuseppeNeural, pitch e rate moderati)
 async def genera_audio_neurale(text):
     clean_txt = clean_text_for_speech(text)
     if not clean_txt:
         return None
-    # GiuseppeNeural è più caldo, maturo e meno stridulo di Diego
     communicate = edge_tts.Communicate(
         clean_txt,
         voice="it-IT-GiuseppeNeural",
@@ -74,7 +69,6 @@ def sintetizza_voce(text):
     except Exception:
         return None
 
-# Componente HTML per l'autoplay immediato senza dover premere play
 def render_autoplay_audio(audio_bytes):
     b64 = base64.b64encode(audio_bytes).decode()
     audio_html = f"""
@@ -123,7 +117,7 @@ def salva_sessione_su_sheet(student_name, message_count, activity, messages_list
     Genera due valutazioni distinte e restituiscile ESCLUSIVAMENTE in JSON valido:
     {{
       "excel_summary": "Giudizio clinico, sintetico (massimo 2-3 frasi) e diretto per il docente: argomenti visti, se lo studente recepisce le correzioni o se è piantato/bloccato sugli stessi errori.",
-      "student_feedback": "Feedback per lo studente con METODO SANDWICH rigoroso e sobrio (senza enfasi eccessiva e senza toni urlati):\\n\\n🇮🇹 **Valutazione della sessione:**\\n- **Punto di forza:** ...\\n- **Aspetto da migliorare:** ...\\n- **Prossimo passo:** ...\\n\\n🇬🇧 **Session feedback:**\\n- **Strength:** ...\\n- **Area for improvement:** ...\\n- **Next step:** ..."
+      "student_feedback": "Feedback per lo studente con METODO SANDWICH rigoroso e sobrio:\\n\\n🇮🇹 **Valutazione della sessione:**\\n- **Punto di forza:** ...\\n- **Aspetto da migliorare:** ...\\n- **Prossimo passo:** ...\\n\\n🇬🇧 **Session feedback:**\\n- **Strength:** ...\\n- **Area for improvement:** ...\\n- **Next step:** ..."
     }}
     """
     
@@ -188,18 +182,39 @@ except Exception as e:
 
 st.title("Il tuo professore Alessandro online 😊")
 
+# Gestione stato identificazione
 if "confirmed_student_name" not in st.session_state:
     st.session_state.confirmed_student_name = ""
+if "is_identified" not in st.session_state:
+    st.session_state.is_identified = False
 
-student_name_input = st.text_input(
-    "Inserisci il tuo nome per iniziare:",
-    value=st.session_state.confirmed_student_name
-)
+col_input, col_reset = st.columns([4, 1])
+with col_input:
+    student_name_input = st.text_input(
+        "Inserisci il tuo nome per iniziare:",
+        value=st.session_state.confirmed_student_name,
+        disabled=st.session_state.is_identified
+    )
+
+if st.session_state.is_identified:
+    with col_reset:
+        st.write("")
+        if st.button("🔄 Cambia", help="Cambia studente"):
+            st.session_state.is_identified = False
+            st.session_state.confirmed_student_name = ""
+            st.session_state.session_started = False
+            st.session_state.support_lang_choice = None
+            st.session_state.messages = []
+            st.session_state.session_message_count = 0
+            st.session_state.feedback_to_show = None
+            st.rerun()
+
 student_name = student_name_input.strip()
 
 if student_name:
     if student_name in students_df.index:
         st.session_state.confirmed_student_name = student_name
+        st.session_state.is_identified = True
         dati_studente = students_df.loc[student_name]
         
         if isinstance(dati_studente, pd.DataFrame):
@@ -220,7 +235,7 @@ if student_name:
         else:
             st.success(f"Benvenuto, {student_name}! Pronto a fare pratica?")
 
-        # Inizializzazioni di stato
+        # Inizializzazioni
         if "session_started" not in st.session_state:
             st.session_state.session_started = False
         if "voice_active_locked" not in st.session_state:
@@ -260,31 +275,30 @@ if student_name:
 
         system_prompt = f"""
         # ITALIANO | PROFESSOR ALESSANDRO — TUTOR PERSONALE DI CONVERSAZIONE
-        Ti chiami Alessandro. Sei il tutor personale di italiano dello studente {student_name}. Sei nato a Padova e sei un millennial: simpatico, empatico, acuto, ma con un tono di voce calmo, pacato e rilassato. Non usare toni urlati, esageratamente entusiasti o pieni di esclamazioni.
+        Ti chiami Alessandro. Sei il tutor personale di italiano dello studente {student_name}. Sei nato a Padova e sei un millennial: simpatico, empatico, acuto, con un tono calmo e pacato.
         
-        [REGOLE DI TONO E PUNTEGGIATURA PER IL SINTETIZZATORE VOCALE]
+        [REGOLE DI TONO E PUNTEGGIATURA]
         - Usa una punteggiatura regolare (virgole, punti fermi).
-        - NON usare MAI punti esclamativi multipli ("!!", "!!!"). Limita i punti esclamativi allo stretto necessario.
-        - Non usare saluti enfatici finti.
+        - NON usare MAI punti esclamativi multipli ("!!", "!!!"). Limita i punti esclamativi.
 
         [DATI DELLO STUDENTE]
         - Livello CEFR: {livello_studente}
         - Paese di nascita: {country_birth}
         - Lingua nativa: {lingua_nativa}
-        - Lingua supporto concordata: {st.session_state.support_lang_choice}
+        - Lingua supporto: {st.session_state.support_lang_choice}
         - Punti di miglioramento: {dati_studente.get('Punti di miglioramento', 'Nessuno specifico')}
         - Documento di teoria attuale: {dati_studente.get('Documento Teoria', 'Nessuno')}
         - Storico ultima sessione: {progressi_passati}
 
         [REGOLE DI CORREZIONE]
-        - Se la frase dello studente è CORRETTA: NON usare lo schema "❌ / ✅". Prosegui naturalmente il dialogo.
+        - Se la frase dello studente è CORRETTA: NON usare "❌ / ✅". Prosegui naturalmente il dialogo.
         - Se c'è un VERO errore:
           ❌ [Frase errata]
           ✅ [Frase corretta]
           (Spiegazione chiara e tranquilla in 1 riga).
 
         [MODALITÀ GRAMMATICA ED ESERCIZI]
-        1. Spiegazione chiara e completa (coniugazioni e forme principali). Termina con calma chiedendo se ha dubbi.
+        1. Spiegazione chiara e completa (coniugazioni e forme principali). Termina chiedendo se ha dubbi.
         2. Se non ha capito, rispiega usando {lingua_nativa} o {st.session_state.support_lang_choice}.
         3. Solo dopo conferma, proponi 2-3 esercizi pratici.
         """
@@ -303,7 +317,7 @@ if student_name:
         if "last_audio_processed" not in st.session_state:
             st.session_state.last_audio_processed = None
 
-        # --- SCHERMATA DI FINE SESSIONE DEDICATA CON FORM DI VALUTAZIONE ---
+        # --- SCHERMATA DI FINE SESSIONE DEDICATA ---
         if st.session_state.feedback_to_show:
             st.success("🎉 **Sessione completata con successo!**")
             
@@ -315,23 +329,23 @@ if student_name:
             st.markdown("### ⭐️ Valuta la sessione di oggi con Alessandro")
             
             if not st.session_state.rating_submitted:
-                # Usiamo uno streamlit form in modo che lo studente scriva prima il commento e poi prema invio
-                with st.form("form_valutazione_sessione"):
+                with st.form("form_valutazione_sessione", clear_on_submit=False):
                     voto_scelto = st.radio(
                         "Come ti è sembrata la lezione?",
                         ["👍 Molto utile e piacevole", "👎 Si può migliorare"],
                         horizontal=True
                     )
                     commento_studente = st.text_area(
-                        "Hai commenti o suggerimenti per il professore? (Opzionale):",
-                        placeholder="Scrivi qui eventuali note, dubbi o idee..."
+                        "Lascia un commento o suggerimento per il professore (Opzionale):",
+                        placeholder="Scrivi qui eventuali note prima di inviare...",
+                        height=100
                     )
-                    pulsante_invio = st.form_submit_button("📤 Invia valutazione e salva commento", use_container_width=True)
+                    pulsante_invio = st.form_submit_button("📤 Invia valutazione e commento", use_container_width=True)
                     
                     if pulsante_invio:
                         voto_stringa = "Positivo (👍)" if "Molto utile" in voto_scelto else "Negativo (👎)"
-                        with st.spinner("Registrazione della valutazione in corso..."):
-                            invia_rating_su_sheet(voto_stringa, commento_studente)
+                        with st.spinner("Salvataggio valutazione in corso..."):
+                            invia_rating_su_sheet(voto_stringa, commento_studente.strip())
                             st.session_state.rating_submitted = True
                             st.rerun()
             else:
@@ -455,7 +469,6 @@ if student_name:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
                 if msg.get("audio_bytes") and is_voice_mode:
-                    # L'ultimo messaggio del bot si riproduce automaticamente via HTML5, i precedenti restano ascoltabili
                     if idx == len(st.session_state.messages) - 1 and msg["role"] == "model":
                         render_autoplay_audio(msg["audio_bytes"])
                     else:
@@ -548,6 +561,7 @@ if student_name:
                 st.session_state.messages.pop()
 
     else:
+        st.session_state.is_identified = False
         tutti_nomi = students_df.index.unique().dropna().astype(str).tolist()
         simili = difflib.get_close_matches(student_name, tutti_nomi, n=3, cutoff=0.5)
         if simili:
@@ -555,6 +569,7 @@ if student_name:
             for idx, match in enumerate(simili):
                 if st.button(f"👉 {match}", key=f"btn_match_{idx}", use_container_width=True):
                     st.session_state.confirmed_student_name = match
+                    st.session_state.is_identified = True
                     st.rerun()
         else:
             st.warning("Nome non trovato nel registro. Controlla come lo hai scritto o contatta il professore Alessandro!")
