@@ -2,5 +2,5 @@ streamlit
 google-generativeai
 pandas
 requests
-gTTS
+edge-tts
 audio-recorder-streamlit
