@@ -20,7 +20,6 @@ def clean_text_for_speech(text):
     text = re.sub(r'\s+', ' ', text)
     return text.strip()
 
-# Funzione per generare il feedback e salvare su Google Sheets
 def salva_sessione_su_sheet(student_name, message_count, activity, messages_list, model, progressi_precedenti):
     apps_script_url = st.secrets.get("APPS_SCRIPT_URL", None)
     if not apps_script_url or message_count <= 0:
@@ -109,17 +108,24 @@ except Exception as e:
 
 st.title("Il tuo professore Alessandro online 😊")
 
-# 3. Interfaccia Identificazione
-student_name_input = st.text_input("Inserisci il tuo nome per iniziare:")
+# Gestione nome in session_state per supportare il click rapido del suggerimento
+if "confirmed_student_name" not in st.session_state:
+    st.session_state.confirmed_student_name = ""
+
+student_name_input = st.text_input(
+    "Inserisci il tuo nome per iniziare:",
+    value=st.session_state.confirmed_student_name
+)
 student_name = student_name_input.strip()
 
 if student_name:
     if student_name in students_df.index:
+        st.session_state.confirmed_student_name = student_name
         dati_studente = students_df.loc[student_name]
         
-        # Gestione duplicati
+        # Gestione omonimi
         if isinstance(dati_studente, pd.DataFrame):
-            st.warning(f"Attenzione: ho trovato più di un profilo con il nome {student_name}.")
+            st.warning(f"Trovati più profili con il nome {student_name}.")
             nazioni = dati_studente['Country of Residence'].tolist()
             scelta_nazione = st.selectbox(
                 "Per identificarti, seleziona il tuo Paese di Residenza:",
@@ -136,9 +142,16 @@ if student_name:
         else:
             st.success(f"Benvenuto, {student_name}! Pronto a fare pratica?")
 
-        # Selezione delle 4 Macro-Attività
-        col_act, col_voice = st.columns([3, 1])
-        with col_act:
+        # Stato della sessione
+        if "session_started" not in st.session_state:
+            st.session_state.session_started = False
+        if "voice_active_locked" not in st.session_state:
+            st.session_state.voice_active_locked = False
+        if "selected_activity_locked" not in st.session_state:
+            st.session_state.selected_activity_locked = None
+
+        # Configurazione prima dell'avvio
+        if not st.session_state.session_started:
             attivita = st.radio(
                 "Cosa ti piacerebbe fare oggi?",
                 [
@@ -150,15 +163,34 @@ if student_name:
                 index=None,
                 horizontal=True
             )
-        with col_voice:
-            st.write("")
-            is_voice_mode = st.checkbox("🎙️ Attiva Voce / Audio", value=True)
 
-        if not attivita:
-            st.info("👆 Seleziona un'attività qui sopra per impostare la lezione.")
+            # Opzione vocale solo per Conversazione e Role-play
+            voice_choice = False
+            if attivita in ["💬 1. Conversazione", "🗣️ 3. Role-play"]:
+                voice_choice = st.checkbox("🎙️ Vuoi attivare la modalità vocale (parlare al microfono e ascoltare)?", value=True)
+            elif attivita is not None:
+                st.caption("ℹ️ Questa attività si svolgerà in modalità solo testo.")
+
+            if not attivita:
+                st.info("👆 Seleziona un'attività qui sopra per impostare la lezione.")
+                st.stop()
+
+            st.write("---")
+            if st.button("🚀 Inizia sessione con Alessandro"):
+                st.session_state.session_started = True
+                st.session_state.selected_activity_locked = attivita
+                st.session_state.voice_active_locked = voice_choice
+                st.session_state.modalita_attivita = attivita
+                st.rerun()
+
             st.stop()
 
-        st.session_state.modalita_attivita = attivita
+        # Sessione in corso (scelte bloccate)
+        attivita = st.session_state.selected_activity_locked
+        is_voice_mode = st.session_state.voice_active_locked
+
+        st.caption(f"Modalità attiva: **{attivita}** | Audio: **{'Attivo' if is_voice_mode else 'Disattivato'}**")
+
         progressi_passati = dati_studente.get('Ultimi Progressi', 'Nessuna sessione registrata finora')
         livello_studente = dati_studente.get('Livello', 'Non specificato')
 
@@ -199,15 +231,15 @@ if student_name:
         - Doc 11: Opinioni e dibattito. Congiuntivo imperfetto e trapassato. Periodo ipotetico. Verbi pronominali. Si impersonale.
         - Doc 12: Confronto culturale. Trapassato prossimo. Forma passiva. Indefiniti, rafforzativi, connettivi complessi.
 
-        [MODALITÀ ATTUALMENTE ATTIVA: {attivita}]
-        Adatta la tua risposta a seconda della modalità scelta:
+        [MODALITÀ ATTIVA: {attivita}]
+        Adatta la risposta in base all'attività scelta:
         1. 💬 Conversazione:
-           - Dialogo naturale, amichevole e stimolante su temi quotidiani, calibrato al livello. Fai una domanda alla volta.
+           - Dialogo amichevole e stimolante su temi quotidiani, calibrato al livello. Fai una domanda alla volta.
         2. 📚 Grammatica ed Esercizi:
-           - Chiedi quale argomento desidera approfondire. Se non lo specifica, seleziona tu un punto critico incrociando [Storico ultima sessione: {progressi_passati}], [Punti di miglioramento] e [Documento di teoria attuale].
-           - STRUTTURA: 1) Brevissima spiegazione teorica (massimo 2 frasi + esempio); 2) Subito un micro-esercizio (scelta multipla, completamento frase o trasformazione) da risolvere subito.
+           - Chiedi quale argomento desidera approfondire. Se non specificato, seleziona un punto critico incrociando [Storico ultima sessione: {progressi_passati}], [Punti di miglioramento] e [Documento di teoria attuale].
+           - STRUTTURA: 1) Brevissima spiegazione teorica (massimo 2 frasi + esempio); 2) Subito un micro-esercizio (scelta multipla, completamento o trasformazione) da risolvere subito.
         3. 🗣️ Role-play:
-           - Chiedi che situazione vuole simulare (es. al bar, colloquio, aeroporto). Se non sceglie, proponila tu con un piccolo imprevisto realistico. Rimani sempre nel personaggio.
+           - Chiedi quale situazione reale desidera simulare. Se non sceglie, proponila tu con un piccolo imprevisto realistico. Rimani nel personaggio.
         4. 🎯 Sfida & Giochi:
            - Proponi attività ludiche mirate (es. "Due verità e una bugia", "Caccia all'errore" sui suoi tipici sbagli, o "Il Detective delle parole").
 
@@ -216,8 +248,8 @@ if student_name:
           ❌ Forma usata
           ✅ Forma corretta
           (Spiegazione rapida del perché, in inglese se livello < A2, altrimenti in italiano).
-        - Niente complimenti artificiosi o esagerati. Sii autentico, caloroso e concreto.
-        - Vietato categoricamente generare timestamp (es. "00:03", "01:15") nel testo.
+        - Niente complimenti forzati. Sii autentico, caloroso e concreto.
+        - Non generare timestamp o riferimenti orari nel testo.
         """
         
         model = genai.GenerativeModel(
@@ -245,7 +277,7 @@ if student_name:
                 _, feedback_studente = salva_sessione_su_sheet(
                     student_name, 
                     st.session_state.session_message_count, 
-                    st.session_state.modalita_attivita, 
+                    st.session_state.selected_activity_locked, 
                     st.session_state.messages, 
                     model,
                     progressi_passati
@@ -253,9 +285,10 @@ if student_name:
             st.session_state.feedback_to_show = feedback_studente
             st.session_state.messages = []
             st.session_state.session_message_count = 0
-            st.info("È trascorsa più di 1 ora dall'ultimo accesso: sessione precedente salvata.")
+            st.session_state.session_started = False
+            st.info("È trascorsa più di 1 ora dall'ultimo accesso: sessione salvata.")
 
-        # Sidebar con metriche e salvataggio
+        # Sidebar
         with st.sidebar:
             st.header("📊 La tua sessione")
             st.metric("Messaggi scambiati", st.session_state.session_message_count)
@@ -265,7 +298,7 @@ if student_name:
                         _, feedback_studente = salva_sessione_su_sheet(
                             student_name, 
                             st.session_state.session_message_count, 
-                            st.session_state.modalita_attivita, 
+                            st.session_state.selected_activity_locked, 
                             st.session_state.messages, 
                             model,
                             progressi_passati
@@ -273,132 +306,137 @@ if student_name:
                     st.session_state.feedback_to_show = feedback_studente
                     st.session_state.messages = []
                     st.session_state.session_message_count = 0
+                    st.session_state.session_started = False
+                    st.rerun()
                 else:
-                    st.warning("Non ci sono ancora messaggi scambiati in questa sessione.")
+                    st.warning("Non ci sono messaggi scambiati in questa sessione.")
 
-        # Visualizzazione feedback a sandwich per lo studente
+        # Schermata di feedback di fine sessione
         if st.session_state.feedback_to_show:
             st.success("Sessione completata e registrata.")
             with st.expander("📝 Resoconto didattico di Alessandro", expanded=True):
                 st.markdown(st.session_state.feedback_to_show)
-            if st.button("✨ Inizia una nuova sessione"):
+            if st.button("✨ Nuova sessione"):
                 st.session_state.feedback_to_show = None
                 st.rerun()
 
-        # Pulsante di avvio prima domanda
+        # Generazione della prima battuta di Alessandro
         if len(st.session_state.messages) == 0 and not st.session_state.feedback_to_show:
-            st.write("---")
-            if st.button("🚀 Inizia sessione con Alessandro"):
-                with st.spinner("Alessandro sta preparando la sessione..."):
-                    prompt_avvio = f"Lo studente ha scelto '{attivita}'. Avvia la sessione salutandolo in modo naturale e proponendo subito la prima battuta o domanda stimolante adatta alla modalità e al suo livello."
-                    res_init = model.generate_content(prompt_avvio)
-                    init_text = re.sub(r'\b\d{1,2}:\d{2}(?::\d{2})?\b', '', res_init.text).strip()
+            with st.spinner("Alessandro sta preparando la sessione..."):
+                prompt_avvio = f"Lo studente ha scelto '{attivita}'. Avvia la sessione salutandolo in modo naturale e proponendo subito la prima battuta o domanda stimolante adatta alla modalità e al suo livello."
+                res_init = model.generate_content(prompt_avvio)
+                init_text = re.sub(r'\b\d{1,2}:\d{2}(?::\d{2})?\b', '', res_init.text).strip()
 
-                    init_audio = None
-                    if is_voice_mode:
-                        clean_text = clean_text_for_speech(init_text)
-                        if clean_text:
-                            audio_buffer = io.BytesIO()
-                            tts = gTTS(text=clean_text, lang='it', slow=False)
-                            tts.write_to_fp(audio_buffer)
-                            audio_buffer.seek(0)
-                            init_audio = audio_buffer.read()
+                init_audio = None
+                if is_voice_mode:
+                    clean_text = clean_text_for_speech(init_text)
+                    if clean_text:
+                        audio_buffer = io.BytesIO()
+                        tts = gTTS(text=clean_text, lang='it', slow=False)
+                        tts.write_to_fp(audio_buffer)
+                        audio_buffer.seek(0)
+                        init_audio = audio_buffer.read()
 
-                    st.session_state.messages.append({
-                        "role": "model",
-                        "content": init_text,
-                        "audio_bytes": init_audio
-                    })
-                    st.session_state.last_interaction_time = datetime.now()
-                    st.rerun()
+                st.session_state.messages.append({
+                    "role": "model",
+                    "content": init_text,
+                    "audio_bytes": init_audio
+                })
+                st.session_state.last_interaction_time = datetime.now()
+                st.rerun()
 
-        # Visualizza cronologia messaggi
+        # Visualizzazione cronologia messaggi
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
                 if msg.get("audio_bytes") and is_voice_mode:
                     st.audio(msg["audio_bytes"], format="audio/mp3")
 
-        # Chat input (attivo dopo l'avvio)
-        if len(st.session_state.messages) > 0:
-            audio_bytes = None
-            if is_voice_mode:
-                st.write("---")
-                st.caption("🎙️ Premi per parlare o scrivi nella casella in basso:")
-                audio_bytes = audio_recorder(
-                    text="Parla",
-                    recording_color="#e74c3c",
-                    neutral_color="#2ecc71",
-                    icon_size="2x"
-                )
+        # Sezione input
+        audio_bytes = None
+        if is_voice_mode:
+            st.write("---")
+            st.caption("🎙️ Premi per parlare o scrivi nella casella sottostante:")
+            audio_bytes = audio_recorder(
+                text="Parla",
+                recording_color="#e74c3c",
+                neutral_color="#2ecc71",
+                icon_size="2x"
+            )
 
-            text_input = st.chat_input("Scrivi qui la tua risposta...")
+        text_input = st.chat_input("Scrivi qui la tua risposta...")
 
-            new_audio = (audio_bytes is not None and audio_bytes != st.session_state.last_audio_processed)
-            user_display = None
-            payload_parts = None
+        new_audio = (audio_bytes is not None and audio_bytes != st.session_state.last_audio_processed)
+        user_display = None
+        payload_parts = None
 
-            if text_input:
-                user_display = text_input
-                payload_parts = [text_input]
-            elif new_audio:
-                st.session_state.last_audio_processed = audio_bytes
-                user_display = "🎤 *Messaggio vocale inviato*"
-                payload_parts = [
-                    {"mime_type": "audio/wav", "data": audio_bytes},
-                    "Ascolta questo audio e rispondi direttamente come tutor Alessandro. Non inserire timestamp."
-                ]
+        if text_input:
+            user_display = text_input
+            payload_parts = [text_input]
+        elif new_audio:
+            st.session_state.last_audio_processed = audio_bytes
+            user_display = "🎤 *Messaggio vocale inviato*"
+            payload_parts = [
+                {"mime_type": "audio/wav", "data": audio_bytes},
+                "Ascolta questo audio e rispondi direttamente come tutor Alessandro. Non inserire timestamp."
+            ]
 
-            if user_display and payload_parts:
-                st.session_state.feedback_to_show = None
-                st.session_state.last_interaction_time = datetime.now()
-                st.session_state.session_message_count += 1
+        if user_display and payload_parts:
+            st.session_state.feedback_to_show = None
+            st.session_state.last_interaction_time = datetime.now()
+            st.session_state.session_message_count += 1
 
-                st.session_state.messages.append({"role": "user", "content": user_display})
-                with st.chat_message("user"):
-                    st.markdown(user_display)
-                    
-                try:
-                    contents = []
-                    for m in st.session_state.messages[:-1]:
-                        ruolo = "model" if m["role"] == "model" else "user"
-                        contents.append({"role": ruolo, "parts": [m["content"]]})
-                    
-                    contents.append({"role": "user", "parts": payload_parts})
-                    
-                    response = model.generate_content(contents)
-                    raw_text = response.text
-                    bot_text = re.sub(r'\b\d{1,2}:\d{2}(?::\d{2})?\b', '', raw_text).strip()
+            st.session_state.messages.append({"role": "user", "content": user_display})
+            with st.chat_message("user"):
+                st.markdown(user_display)
+                
+            try:
+                contents = []
+                for m in st.session_state.messages[:-1]:
+                    ruolo = "model" if m["role"] == "model" else "user"
+                    contents.append({"role": ruolo, "parts": [m["content"]]})
+                
+                contents.append({"role": "user", "parts": payload_parts})
+                
+                response = model.generate_content(contents)
+                raw_text = response.text
+                bot_text = re.sub(r'\b\d{1,2}:\d{2}(?::\d{2})?\b', '', raw_text).strip()
 
-                    bot_audio = None
-                    if is_voice_mode:
-                        clean_text = clean_text_for_speech(bot_text)
-                        if clean_text:
-                            audio_buffer = io.BytesIO()
-                            tts = gTTS(text=clean_text, lang='it', slow=False)
-                            tts.write_to_fp(audio_buffer)
-                            audio_buffer.seek(0)
-                            bot_audio = audio_buffer.read()
+                bot_audio = None
+                if is_voice_mode:
+                    clean_text = clean_text_for_speech(bot_text)
+                    if clean_text:
+                        audio_buffer = io.BytesIO()
+                        tts = gTTS(text=clean_text, lang='it', slow=False)
+                        tts.write_to_fp(audio_buffer)
+                        audio_buffer.seek(0)
+                        bot_audio = audio_buffer.read()
 
-                    st.session_state.messages.append({
-                        "role": "model", 
-                        "content": bot_text,
-                        "audio_bytes": bot_audio
-                    })
+                st.session_state.messages.append({
+                    "role": "model", 
+                    "content": bot_text,
+                    "audio_bytes": bot_audio
+                })
 
-                    with st.chat_message("model"):
-                        st.markdown(bot_text)
-                        if bot_audio and is_voice_mode:
-                            st.audio(bot_audio, format="audio/mp3")
+                with st.chat_message("model"):
+                    st.markdown(bot_text)
+                    if bot_audio and is_voice_mode:
+                        st.audio(bot_audio, format="audio/mp3")
 
-                except Exception as e:
-                    st.error(f"Errore Tecnico API: {e}")
-                    st.session_state.messages.pop()
+            except Exception as e:
+                st.error(f"Errore Tecnico API: {e}")
+                st.session_state.messages.pop()
 
     else:
+        # Ricerca del nome più simile con pulsante rapido di correzione
         tutti_nomi = students_df.index.unique().dropna().astype(str).tolist()
-        simili = difflib.get_close_matches(student_name, tutti_nomi, n=2, cutoff=0.6)
+        simili = difflib.get_close_matches(student_name, tutti_nomi, n=3, cutoff=0.5)
         if simili:
-            st.warning(f"Nome non trovato. Forse intendevi: **{', '.join(simili)}**?")
+            st.warning("Nome non trovato nel registro. Forse intendevi:")
+            cols = st.columns(len(simili))
+            for i, match in enumerate(simili):
+                if cols[i].button(f"👉 {match}", key=f"btn_match_{i}"):
+                    st.session_state.confirmed_student_name = match
+                    st.rerun()
         else:
             st.warning("Nome non trovato nel registro. Controlla come lo hai scritto o contatta il professore Alessandro!")
