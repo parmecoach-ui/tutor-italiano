@@ -6,8 +6,9 @@ import io
 import difflib
 import re
 import json
+import asyncio
+import edge_tts
 from datetime import datetime
-from gtts import gTTS
 from audio_recorder_streamlit import audio_recorder
 
 st.set_page_config(page_title="Il tuo professore Alessandro online 😊", page_icon="😊")
@@ -40,6 +41,25 @@ def clean_text_for_speech(text):
     text = re.sub(r'[^\w\s,;.?!:\'\-—àèéìòùÀÈÉÌÒÙ]', '', text)
     text = re.sub(r'\s+', ' ', text)
     return text.strip()
+
+# Generazione audio neurale umana tramite Edge-TTS (Voce Diego Neural)
+async def genera_audio_neurale(text):
+    clean_txt = clean_text_for_speech(text)
+    if not clean_txt:
+        return None
+    communicate = edge_tts.Communicate(clean_txt, "it-IT-DiegoNeural")
+    audio_stream = io.BytesIO()
+    async for chunk in communicate.stream():
+        if chunk["type"] == "audio":
+            audio_stream.write(chunk["data"])
+    audio_stream.seek(0)
+    return audio_stream.read()
+
+def sintetizza_voce(text):
+    try:
+        return asyncio.run(genera_audio_neurale(text))
+    except Exception:
+        return None
 
 def get_native_language(country_name):
     if not country_name or country_name == "Non specificato":
@@ -182,7 +202,7 @@ if student_name:
         
         is_sub_or_equal_a2 = any(sub in livello_studente.upper() for sub in ["A0", "A1", "A2", "PRINCIPIANTE", "BASE", "BEGINNER"])
 
-        # Selezione lingua di supporto per <= A2 (uno sotto l'altro)
+        # Selezione lingua di supporto per <= A2
         if is_sub_or_equal_a2 and not st.session_state.support_lang_choice:
             st.info(f"💡 Il tuo livello è **{livello_studente}**. Scegli la lingua per chiarimenti e traduzioni:")
             if st.button("🇬🇧 Inglese (English)", use_container_width=True):
@@ -195,7 +215,7 @@ if student_name:
         elif not is_sub_or_equal_a2:
             st.session_state.support_lang_choice = "Solo Italiano"
 
-        # Configurazione attività
+        # Configurazione attività prima dell'avvio
         if not st.session_state.session_started:
             attivita = st.radio(
                 "Cosa ti piacerebbe fare oggi?",
@@ -275,19 +295,24 @@ if student_name:
         Doc 11: Opinioni, congiuntivo imperfetto/trapassato, periodo ipotetico.
         Doc 12: Confronto culturale, trapassato prossimo, passivo, connettivi logici.
 
-        [MODALITÀ GRAMMATICA ED ESERCIZI — REGOLE SPIEGAZIONE ED ESERCIZI]
+        [REGOLE DI CORREZIONE — CRUCIALI]
+        - Se la frase dello studente è CORRETTA: NON usare MAI lo schema "❌ / ✅". Non inventare errori inesistenti e non fare osservazioni teoriche gratuite. Rispondi al contenuto del messaggio in modo naturale proseguendo il dialogo!
+        - Se la frase contiene un VERO errore grammaticale o lessicale:
+          Usa SOLO allora questo schema:
+          ❌ [Frase errata dello studente]
+          ✅ [Frase corretta]
+          (Breve spiegazione del perché in 1 riga, nella lingua di supporto se livello <= A2).
+          Poi rispondi e poni la tua domanda per mandare avanti il discorso.
+
+        [MODALITÀ GRAMMATICA ED ESERCIZI]
         Quando lo studente sceglie un argomento grammaticale:
         1. FORNISCI UNA SPIEGAZIONE BREVE MA COMPLETA:
-           - Spiega la regola senza giri di parole inutili, ma INCLUDI LO SCHEMA COMPLETO (es. se è un tempo verbale, metti la coniugazione per tutte le persone: io, tu, lui/lei, noi, voi, loro).
-           - Menziona chiaramente le eccezioni o le forme irregolari principali più frequenti.
+           - Includi lo schema completo (es. coniugazione completa io/tu/lui...).
+           - Menziona chiaramente le eccezioni o irregolarità principali.
            - Fornisci 1-2 frasi di esempio concrete.
-           - NON inviare subito gli esercizi: termina il messaggio chiedendo se la spiegazione è chiara e se ha dubbi.
-        2. Se lo studente dice di non aver capito, rispiega il passaggio critico usando {lingua_nativa} o {chosen_support_lang} e chiedigli esattamente cosa non torna.
-        3. Solo quando lo studente conferma di aver capito ("Ho capito, facciamo gli esercizi!"), proponi 2-3 esercizi pratici mirati (scelta multipla o completamento frase).
-
-        [STILE DI CORREZIONE]
-        - Schema sobrio: ❌ Forma usata | ✅ Forma corretta | Spiegazione chiara.
-        - Non inserire mai timestamp o riferimenti orari nel testo.
+           - NON inviare subito gli esercizi: termina chiedendo se è chiaro.
+        2. Se lo studente dice di non aver capito, rispiega il passaggio critico usando {lingua_nativa} o {chosen_support_lang}.
+        3. Solo quando conferma di aver capito ("Ho capito, facciamo gli esercizi!"), proponi 2-3 esercizi pratici mirati.
         """
         
         model = genai.GenerativeModel(
@@ -306,7 +331,6 @@ if student_name:
         if "feedback_to_show" not in st.session_state:
             st.session_state.feedback_to_show = None
 
-        # Controllo inattività > 1 ora
         adesso = datetime.now()
         tempo_trascorso = (adesso - st.session_state.last_interaction_time).total_seconds()
         
@@ -349,7 +373,6 @@ if student_name:
                 else:
                     st.warning("Nessun messaggio da salvare.")
 
-        # Schermata feedback finale
         if st.session_state.feedback_to_show:
             st.success("Sessione completata e registrata!")
             with st.expander("📝 Resoconto didattico di Alessandro", expanded=True):
@@ -360,14 +383,13 @@ if student_name:
                 st.session_state.support_lang_choice = None
                 st.rerun()
 
-        # Avvio della sessione (primo turno)
+        # Avvio primo turno
         if len(st.session_state.messages) == 0 and not st.session_state.feedback_to_show:
             if attivita == "📚 2. Grammatica ed Esercizi":
                 with st.spinner("Alessandro sta analizzando i tuoi punti di miglioramento..."):
                     prompt_opt = f"""
                     In base a Punti di miglioramento: '{dati_studente.get('Punti di miglioramento')}' e Storico: '{progressi_passati}', proponi esattamente 3 argomenti grammaticali da ripassare.
-                    REGOLA TESTO CORTO: Ogni argomento deve essere brevissimo (massimo 2-4 parole, es: "Condizionale presente", "Preposizioni articolate", "Passato prossimo").
-                    Restituiscili SOLO come JSON array di 3 stringhe brevi, es: ["Condizionale presente", "Preposizioni articolate", "Verbi riflessivi"]
+                    REGOLA: Titoli corti (2-4 parole). Restituisci solo JSON array di 3 stringhe.
                     """
                     try:
                         res_opt = model.generate_content(prompt_opt)
@@ -378,15 +400,11 @@ if student_name:
                             raw_opt = raw_opt.split("```")[1].split("```")[0]
                         st.session_state.grammar_options = json.loads(raw_opt.strip())[:3]
                     except Exception:
-                        st.session_state.grammar_options = [
-                            "Condizionale presente",
-                            "Preposizioni articolate",
-                            "Passato prossimo"
-                        ]
+                        st.session_state.grammar_options = ["Condizionale presente", "Preposizioni articolate", "Passato prossimo"]
 
                     init_msg = (
                         f"Ciao {student_name}! Oggi lavoriamo sulla grammatica pratica. "
-                        f"Ho selezionato per te 3 argomenti su cui possiamo concentrarci: clicca su quello che vuoi ripassare "
+                        f"Ho selezionato 3 argomenti utili per te: clicca su quello che vuoi ripassare "
                         f"oppure scrivimi direttamente un argomento a tua scelta nella chat!"
                     )
                     st.session_state.messages.append({"role": "model", "content": init_msg, "audio_bytes": None})
@@ -398,28 +416,18 @@ if student_name:
                     res_init = model.generate_content(prompt_avvio)
                     init_text = re.sub(r'\b\d{1,2}:\d{2}(?::\d{2})?\b', '', res_init.text).strip()
 
-                    init_audio = None
-                    if is_voice_mode:
-                        clean_text = clean_text_for_speech(init_text)
-                        if clean_text:
-                            buf = io.BytesIO()
-                            tts = gTTS(text=clean_text, lang='it', slow=False)
-                            tts.write_to_fp(buf)
-                            buf.seek(0)
-                            init_audio = buf.read()
+                    init_audio = sintetizza_voce(init_text) if is_voice_mode else None
 
                     st.session_state.messages.append({"role": "model", "content": init_text, "audio_bytes": init_audio})
                     st.session_state.last_interaction_time = datetime.now()
                     st.rerun()
 
-        # Visualizzazione cronologia messaggi
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
                 if msg.get("audio_bytes") and is_voice_mode:
                     st.audio(msg["audio_bytes"], format="audio/mp3")
 
-        # Bottoni interattivi disposti verticalmente per evitare tagli di testo
         selected_button_text = None
         if attivita == "📚 2. Grammatica ed Esercizi":
             if st.session_state.grammar_phase == "choose_topic" and st.session_state.grammar_options:
@@ -444,7 +452,6 @@ if student_name:
                         f"cosa non mi è chiaro e rispiegamelo con altri esempi semplici."
                     )
 
-        # Gestione Input
         audio_bytes = None
         if is_voice_mode:
             st.write("---")
@@ -494,15 +501,7 @@ if student_name:
                 raw_text = response.text
                 bot_text = re.sub(r'\b\d{1,2}:\d{2}(?::\d{2})?\b', '', raw_text).strip()
 
-                bot_audio = None
-                if is_voice_mode:
-                    clean_text = clean_text_for_speech(bot_text)
-                    if clean_text:
-                        buf = io.BytesIO()
-                        tts = gTTS(text=clean_text, lang='it', slow=False)
-                        tts.write_to_fp(buf)
-                        buf.seek(0)
-                        bot_audio = buf.read()
+                bot_audio = sintetizza_voce(bot_text) if is_voice_mode else None
 
                 st.session_state.messages.append({
                     "role": "model", 
