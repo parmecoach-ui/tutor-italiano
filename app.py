@@ -12,7 +12,6 @@ from audio_recorder_streamlit import audio_recorder
 
 st.set_page_config(page_title="Il tuo professore Alessandro online 😊", page_icon="😊")
 
-# Mappatura rapida Paesi -> Lingua nativa
 COUNTRY_TO_LANG = {
     "brazil": "Portoghese (Brasiliano)",
     "brasil": "Portoghese (Brasiliano)",
@@ -163,7 +162,7 @@ if student_name:
         else:
             st.success(f"Benvenuto, {student_name}! Pronto a fare pratica?")
 
-        # Inizializzazioni di stato
+        # Inizializzazioni di sessione
         if "session_started" not in st.session_state:
             st.session_state.session_started = False
         if "voice_active_locked" not in st.session_state:
@@ -181,24 +180,22 @@ if student_name:
         country_birth = dati_studente.get('Country of Birth', 'Non specificato')
         lingua_nativa = get_native_language(country_birth)
         
-        # Estensione della traduzione fino al livello A2 incluso
         is_sub_or_equal_a2 = any(sub in livello_studente.upper() for sub in ["A0", "A1", "A2", "PRINCIPIANTE", "BASE", "BEGINNER"])
 
-        # Gestione Lingua di supporto per <= A2
+        # Selezione lingua di supporto per <= A2 (uno sotto l'altro)
         if is_sub_or_equal_a2 and not st.session_state.support_lang_choice:
-            st.info(f"💡 Il tuo livello registrato è **{livello_studente}**. Che lingua preferisci usare come supporto per chiarimenti e spiegazioni?")
-            col_l1, col_l2 = st.columns(2)
-            if col_l1.button(f"🇬🇧 Inglese (English)"):
+            st.info(f"💡 Il tuo livello è **{livello_studente}**. Scegli la lingua per chiarimenti e traduzioni:")
+            if st.button("🇬🇧 Inglese (English)", use_container_width=True):
                 st.session_state.support_lang_choice = "Inglese"
                 st.rerun()
-            if col_l2.button(f"🌐 Lingua nativa ({lingua_nativa})"):
+            if st.button(f"🌐 Lingua nativa ({lingua_nativa})", use_container_width=True):
                 st.session_state.support_lang_choice = lingua_nativa
                 st.rerun()
             st.stop()
         elif not is_sub_or_equal_a2:
             st.session_state.support_lang_choice = "Solo Italiano"
 
-        # Configurazione attività prima dell'avvio
+        # Configurazione attività
         if not st.session_state.session_started:
             attivita = st.radio(
                 "Cosa ti piacerebbe fare oggi?",
@@ -223,7 +220,7 @@ if student_name:
                 st.stop()
 
             st.write("---")
-            if st.button("🚀 Inizia sessione con Alessandro"):
+            if st.button("🚀 Inizia sessione con Alessandro", use_container_width=True):
                 st.session_state.session_started = True
                 st.session_state.selected_activity_locked = attivita
                 st.session_state.voice_active_locked = voice_choice
@@ -245,12 +242,12 @@ if student_name:
         system_prompt = f"""
         # ITALIANO | PROFESSOR ALESSANDRO — TUTOR PERSONALE DI CONVERSAZIONE
 
-        Ti chiami Alessandro. Sei il tutor personale di italiano dello studente {student_name}. Sei nato a Padova e sei un millennial: sei simpatico, empatico, ma molto acuto. Hai la battuta pronta, sai far ridere, ma correggi con precisione per far migliorare realmente i tuoi studenti.
-        Il tuo obiettivo è portare lo studente a comunicare con naturalezza e autonomia, eliminando la traduzione mentale.
+        Ti chiami Alessandro. Sei il tutor personale di italiano dello studente {student_name}. Sei nato a Padova e sei un millennial: simpatico, empatico, brillante e acuto. Correggi con precisione per far migliorare realmente i tuoi studenti.
+        Il tuo obiettivo è portare lo studente a comunicare con naturalezza e padronanza.
 
         [DATI DELLO STUDENTE]
         - Livello CEFR stimato: {livello_studente}
-        - Paese di nascita (Origine): {country_birth}
+        - Paese di nascita: {country_birth}
         - Lingua nativa desunta: {lingua_nativa}
         - Lingua di supporto concordata: {chosen_support_lang}
         - Motivazione: {dati_studente.get('Reason to learn', 'Migliorare l italiano')}
@@ -259,9 +256,9 @@ if student_name:
         - Storico ultima sessione: {progressi_passati}
 
         [REGOLA SULLA LINGUA E LIVELLO QCER/CEFR]
-        - Se il livello è pari o inferiore ad A2 (A0, A1, A2): usa l'italiano semplice e chiaro, ma affianca spiegazioni, istruzioni ed eventuali traduzioni nella lingua di supporto scelta: {chosen_support_lang}.
-        - Se lo studente dichiara di NON aver capito una spiegazione teorica, intervieni con massima empatia spiegando e chiedendo chiarimenti in {lingua_nativa} (o {chosen_support_lang}).
-        - Se il livello è superiore ad A2 (da B1 in su), usa esclusivamente l'italiano, salvo esplicita richiesta di soccorso lessicale.
+        - Se il livello è pari o inferiore ad A2 (A0, A1, A2): usa l'italiano chiaro, ma affianca spiegazioni ed esempi nella lingua di supporto scelta: {chosen_support_lang}.
+        - Se lo studente dice di NON aver capito, intervieni con cura rispiegando e chiedendo chiarimenti nella sua lingua nativa ({lingua_nativa}).
+        - Se il livello è superiore ad A2 (B1+), usa esclusivamente l'italiano.
 
         [PROGRESSIONE DIDATTICA E SYLLABUS (Doc 01 - 12)]
         Non superare mai il documento attuale: {dati_studente.get('Documento Teoria', 'Nessuno')}.
@@ -278,15 +275,19 @@ if student_name:
         Doc 11: Opinioni, congiuntivo imperfetto/trapassato, periodo ipotetico.
         Doc 12: Confronto culturale, trapassato prossimo, passivo, connettivi logici.
 
-        [MODALITÀ GRAMMATICA ED ESERCIZI]
-        Quando lo studente sceglie un argomento:
-        1. Fornisci una spiegazione teorica chiarissima, breve ed essenziale (massimo 2-3 frasi ed 1 esempio pratico). NON dare subito l'esercizio: chiedi prima se ha capito.
-        2. Se lo studente dice di non aver capito, rispiega con cura e chiedi spiegazioni in {lingua_nativa} (o {chosen_support_lang}).
-        3. Solo quando lo studente conferma di aver capito, proponi subito 2-3 micro-esercizi mirati ed efficaci.
+        [MODALITÀ GRAMMATICA ED ESERCIZI — REGOLE SPIEGAZIONE ED ESERCIZI]
+        Quando lo studente sceglie un argomento grammaticale:
+        1. FORNISCI UNA SPIEGAZIONE BREVE MA COMPLETA:
+           - Spiega la regola senza giri di parole inutili, ma INCLUDI LO SCHEMA COMPLETO (es. se è un tempo verbale, metti la coniugazione per tutte le persone: io, tu, lui/lei, noi, voi, loro).
+           - Menziona chiaramente le eccezioni o le forme irregolari principali più frequenti.
+           - Fornisci 1-2 frasi di esempio concrete.
+           - NON inviare subito gli esercizi: termina il messaggio chiedendo se la spiegazione è chiara e se ha dubbi.
+        2. Se lo studente dice di non aver capito, rispiega il passaggio critico usando {lingua_nativa} o {chosen_support_lang} e chiedigli esattamente cosa non torna.
+        3. Solo quando lo studente conferma di aver capito ("Ho capito, facciamo gli esercizi!"), proponi 2-3 esercizi pratici mirati (scelta multipla o completamento frase).
 
         [STILE DI CORREZIONE]
-        - Schema sobrio: ❌ Forma usata | ✅ Forma corretta | Spiegazione chiara (nella lingua di supporto se livello <= A2).
-        - Non generare mai timestamp o riferimenti orari nel testo.
+        - Schema sobrio: ❌ Forma usata | ✅ Forma corretta | Spiegazione chiara.
+        - Non inserire mai timestamp o riferimenti orari nel testo.
         """
         
         model = genai.GenerativeModel(
@@ -329,7 +330,7 @@ if student_name:
         with st.sidebar:
             st.header("📊 La tua sessione")
             st.metric("Messaggi scambiati", st.session_state.session_message_count)
-            if st.button("🏁 Termina sessione e salva"):
+            if st.button("🏁 Termina sessione e salva", use_container_width=True):
                 if st.session_state.session_message_count > 0:
                     with st.spinner("Salvataggio su Google Sheets in corso..."):
                         _, feedback_studente = salva_sessione_su_sheet(
@@ -353,7 +354,7 @@ if student_name:
             st.success("Sessione completata e registrata!")
             with st.expander("📝 Resoconto didattico di Alessandro", expanded=True):
                 st.markdown(st.session_state.feedback_to_show)
-            if st.button("✨ Nuova sessione"):
+            if st.button("✨ Nuova sessione", use_container_width=True):
                 st.session_state.feedback_to_show = None
                 st.session_state.session_started = False
                 st.session_state.support_lang_choice = None
@@ -364,8 +365,9 @@ if student_name:
             if attivita == "📚 2. Grammatica ed Esercizi":
                 with st.spinner("Alessandro sta analizzando i tuoi punti di miglioramento..."):
                     prompt_opt = f"""
-                    In base a Punti di miglioramento: '{dati_studente.get('Punti di miglioramento')}' e Storico: '{progressi_passati}', proponi esattamente 3 argomenti grammaticali specifici e brevi da ripassare.
-                    Restituiscili SOLO come JSON array di 3 stringhe, es: ["Passato prossimo con essere o avere", "Uso delle preposizioni articolate", "Accordo dei verbi riflessivi"]
+                    In base a Punti di miglioramento: '{dati_studente.get('Punti di miglioramento')}' e Storico: '{progressi_passati}', proponi esattamente 3 argomenti grammaticali da ripassare.
+                    REGOLA TESTO CORTO: Ogni argomento deve essere brevissimo (massimo 2-4 parole, es: "Condizionale presente", "Preposizioni articolate", "Passato prossimo").
+                    Restituiscili SOLO come JSON array di 3 stringhe brevi, es: ["Condizionale presente", "Preposizioni articolate", "Verbi riflessivi"]
                     """
                     try:
                         res_opt = model.generate_content(prompt_opt)
@@ -377,15 +379,15 @@ if student_name:
                         st.session_state.grammar_options = json.loads(raw_opt.strip())[:3]
                     except Exception:
                         st.session_state.grammar_options = [
-                            "Ripasso verbi Essere e Avere",
-                            "Accordo degli articoli determinativi",
-                            "Uso del Passato Prossimo"
+                            "Condizionale presente",
+                            "Preposizioni articolate",
+                            "Passato prossimo"
                         ]
 
                     init_msg = (
                         f"Ciao {student_name}! Oggi lavoriamo sulla grammatica pratica. "
-                        f"Ho dato un'occhiata ai tuoi punti da rinforzare: puoi scegliere uno di questi 3 argomenti con i bottoni qui sotto, "
-                        f"oppure scrivermi direttamente tu cosa preferisci ripassare!"
+                        f"Ho selezionato per te 3 argomenti su cui possiamo concentrarci: clicca su quello che vuoi ripassare "
+                        f"oppure scrivimi direttamente un argomento a tua scelta nella chat!"
                     )
                     st.session_state.messages.append({"role": "model", "content": init_msg, "audio_bytes": None})
                     st.session_state.grammar_phase = "choose_topic"
@@ -417,28 +419,29 @@ if student_name:
                 if msg.get("audio_bytes") and is_voice_mode:
                     st.audio(msg["audio_bytes"], format="audio/mp3")
 
-        # Bottoni interattivi per la Grammatica
+        # Bottoni interattivi disposti verticalmente per evitare tagli di testo
         selected_button_text = None
         if attivita == "📚 2. Grammatica ed Esercizi":
             if st.session_state.grammar_phase == "choose_topic" and st.session_state.grammar_options:
                 st.write("**Scegli l'argomento da ripassare:**")
-                cols = st.columns(len(st.session_state.grammar_options))
                 for idx, opt in enumerate(st.session_state.grammar_options):
-                    if cols[idx].button(f"📌 {opt}", key=f"topic_btn_{idx}"):
-                        selected_button_text = f"Vorrei ripassare: {opt}. Fammi prima una spiegazione teorica semplice ed essenziale, poi ti dirò se ho capito."
+                    if st.button(f"📌 {opt}", key=f"topic_btn_{idx}", use_container_width=True):
+                        selected_button_text = (
+                            f"Vorrei ripassare: {opt}. Spiegami la regola in modo chiaro e sintetico, includendo tutte le coniugazioni/forme ed eventuali eccezioni importanti. "
+                            f"Poi chiedimi se ho capito prima di passare agli esercizi."
+                        )
                         st.session_state.grammar_phase = "theory_check"
                 st.caption("Oppure digita l'argomento che preferisci nella casella in basso 👇")
 
             elif st.session_state.grammar_phase == "theory_check":
                 st.write("**Hai capito la spiegazione di Alessandro?**")
-                col_c1, col_c2 = st.columns(2)
-                if col_c1.button("✅ Ho capito, facciamo gli esercizi!", key="btn_understood"):
-                    selected_button_text = "Ho capito benissimo la regola! Ora fammi 2 o 3 esercizi semplici ma efficaci per mettermi alla prova."
+                if st.button("✅ Ho capito, facciamo gli esercizi!", key="btn_understood", use_container_width=True):
+                    selected_button_text = "Ho capito la regola! Ora fammi fare subito degli esercizi pratici ed efficaci per verificare."
                     st.session_state.grammar_phase = "exercise"
-                if col_c2.button("❓ Non ho capito bene...", key="btn_not_understood"):
+                if st.button("❓ Non ho capito bene...", key="btn_not_understood", use_container_width=True):
                     selected_button_text = (
                         f"Non ho capito bene la spiegazione. Chiedimi con empatia nella mia lingua ({lingua_nativa} o {chosen_support_lang}) "
-                        f"cosa non mi è chiaro e rispiegamelo in modo ancora più semplice."
+                        f"cosa non mi è chiaro e rispiegamelo con altri esempi semplici."
                     )
 
         # Gestione Input
@@ -446,8 +449,7 @@ if student_name:
         if is_voice_mode:
             st.write("---")
             st.caption("🎙️ Premi per parlare o scrivi sotto:")
-            audio_recorder_box = audio_recorder(text="Parla", recording_color="#e74c3c", neutral_color="#2ecc71", icon_size="2x")
-            audio_bytes = audio_recorder_box
+            audio_bytes = audio_recorder(text="Parla", recording_color="#e74c3c", neutral_color="#2ecc71", icon_size="2x")
 
         text_input = st.chat_input("Scrivi qui la tua risposta...")
 
@@ -524,9 +526,8 @@ if student_name:
         simili = difflib.get_close_matches(student_name, tutti_nomi, n=3, cutoff=0.5)
         if simili:
             st.warning("Nome non trovato nel registro. Forse intendevi:")
-            cols = st.columns(len(simili))
-            for i, match in enumerate(simili):
-                if cols[i].button(f"👉 {match}", key=f"btn_match_{i}"):
+            for idx, match in enumerate(simili):
+                if st.button(f"👉 {match}", key=f"btn_match_{idx}", use_container_width=True):
                     st.session_state.confirmed_student_name = match
                     st.rerun()
         else:
