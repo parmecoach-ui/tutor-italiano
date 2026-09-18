@@ -182,7 +182,7 @@ except Exception as e:
 
 st.title("Il tuo professore Alessandro online 😊")
 
-# Gestione stato identificazione
+# Gestione identificazione
 if "confirmed_student_name" not in st.session_state:
     st.session_state.confirmed_student_name = ""
 if "is_identified" not in st.session_state:
@@ -207,6 +207,9 @@ if st.session_state.is_identified:
             st.session_state.messages = []
             st.session_state.session_message_count = 0
             st.session_state.feedback_to_show = None
+            st.session_state.exercises_completed = False
+            st.session_state.roleplay_options = []
+            st.session_state.roleplay_chosen = False
             st.rerun()
 
 student_name = student_name_input.strip()
@@ -248,10 +251,16 @@ if student_name:
             st.session_state.grammar_phase = "choose_topic"
         if "grammar_options" not in st.session_state:
             st.session_state.grammar_options = []
+        if "roleplay_options" not in st.session_state:
+            st.session_state.roleplay_options = []
+        if "roleplay_chosen" not in st.session_state:
+            st.session_state.roleplay_chosen = False
         if "feedback_to_show" not in st.session_state:
             st.session_state.feedback_to_show = None
         if "rating_submitted" not in st.session_state:
             st.session_state.rating_submitted = False
+        if "exercises_completed" not in st.session_state:
+            st.session_state.exercises_completed = False
 
         livello_studente = dati_studente.get('Livello', 'Non specificato')
         country_birth = dati_studente.get('Country of Birth', 'Non specificato')
@@ -260,7 +269,7 @@ if student_name:
         
         is_sub_or_equal_a2 = any(sub in livello_studente.upper() for sub in ["A0", "A1", "A2", "PRINCIPIANTE", "BASE", "BEGINNER"])
 
-        # Selezione lingua di supporto per <= A2
+        # Lingua di supporto per <= A2
         if is_sub_or_equal_a2 and not st.session_state.support_lang_choice:
             st.info(f"💡 Il tuo livello è **{livello_studente}**. Scegli la lingua per chiarimenti e traduzioni:")
             if st.button("🇬🇧 Inglese (English)", use_container_width=True):
@@ -275,11 +284,11 @@ if student_name:
 
         system_prompt = f"""
         # ITALIANO | PROFESSOR ALESSANDRO — TUTOR PERSONALE DI CONVERSAZIONE
-        Ti chiami Alessandro. Sei il tutor personale di italiano dello studente {student_name}. Sei nato a Padova e sei un millennial: simpatico, empatico, acuto, con un tono calmo e pacato.
+        Ti chiami Alessandro. Sei il tutor personale di italiano dello studente {student_name}. Sei nato a Padova e sei un millennial: simpatico, empatico, acuto, con tono rilassato e pacato.
         
         [REGOLE DI TONO E PUNTEGGIATURA]
         - Usa una punteggiatura regolare (virgole, punti fermi).
-        - NON usare MAI punti esclamativi multipli ("!!", "!!!"). Limita i punti esclamativi.
+        - NON usare MAI punti esclamativi multipli ("!!", "!!!").
 
         [DATI DELLO STUDENTE]
         - Livello CEFR: {livello_studente}
@@ -291,7 +300,7 @@ if student_name:
         - Storico ultima sessione: {progressi_passati}
 
         [REGOLE DI CORREZIONE]
-        - Se la frase dello studente è CORRETTA: NON usare "❌ / ✅". Prosegui naturalmente il dialogo.
+        - Se la frase dello studente è CORRETTA: NON usare "❌ / ✅". Prosegui naturalmente.
         - Se c'è un VERO errore:
           ❌ [Frase errata]
           ✅ [Frase corretta]
@@ -300,7 +309,19 @@ if student_name:
         [MODALITÀ GRAMMATICA ED ESERCIZI]
         1. Spiegazione chiara e completa (coniugazioni e forme principali). Termina chiedendo se ha dubbi.
         2. Se non ha capito, rispiega usando {lingua_nativa} o {st.session_state.support_lang_choice}.
-        3. Solo dopo conferma, proponi 2-3 esercizi pratici.
+        3. Solo dopo conferma, proponi 3 esercizi elaborati (scelta multipla, completamento, trasformazione).
+
+        [MODALITÀ ROLE-PLAY]
+        - Definisci chiaramente i ruoli (chi sei tu e chi è lo studente).
+        - Rimani rigorosamente nel personaggio interpretando uno scenario realistico con un piccolo imprevisto.
+
+        [MODALITÀ SFIDA (CHALLENGE SU ERRORI)]
+        - È una prova formativa mirata a correggere gli errori tipici dello studente (basati sui Punti di miglioramento).
+        - Proponi sfide tecniche come: "Caccia all'errore" (trovare e correggere lo sbaglio nascosto tra frasi), "Gira la frase" (trasformare al passato o al condizionale senza errori), o quiz a trabocchetto sulle sue debolezze.
+
+        [MODALITÀ GIOCO (ATTIVITÀ LUDICA)]
+        - È un'attività puramente ricreativa e rilassata per stimolare la spontaneità.
+        - Proponi giochi divertenti come: "Due verità e una bugia" (lo studente racconta 3 fatti e tu indovini la bugia facendogli domande, poi invertite), o "Il Detective delle parole" (descrivere un oggetto/concetto senza nominarlo).
         """
 
         model = genai.GenerativeModel(
@@ -317,7 +338,7 @@ if student_name:
         if "last_audio_processed" not in st.session_state:
             st.session_state.last_audio_processed = None
 
-        # --- SCHERMATA DI FINE SESSIONE DEDICATA ---
+        # --- SCHERMATA FINE SESSIONE ---
         if st.session_state.feedback_to_show:
             st.success("🎉 **Sessione completata con successo!**")
             
@@ -358,11 +379,14 @@ if student_name:
                 st.session_state.rating_submitted = False
                 st.session_state.messages = []
                 st.session_state.session_message_count = 0
+                st.session_state.exercises_completed = False
+                st.session_state.roleplay_options = []
+                st.session_state.roleplay_chosen = False
                 st.rerun()
 
             st.stop()
 
-        # Configurazione attività prima dell'avvio
+        # Configurazione attività con Sfida e Gioco separati (Gioco per ultimo)
         if not st.session_state.session_started:
             attivita = st.radio(
                 "Cosa ti piacerebbe fare oggi?",
@@ -370,7 +394,8 @@ if student_name:
                     "💬 1. Conversazione",
                     "📚 2. Grammatica ed Esercizi",
                     "🗣️ 3. Role-play",
-                    "🎯 4. Sfida & Giochi"
+                    "🎯 4. Sfida (Errori e Quiz)",
+                    "🎲 5. Gioco"
                 ],
                 index=None,
                 horizontal=True
@@ -394,6 +419,9 @@ if student_name:
                 st.session_state.modalita_attivita = attivita
                 st.session_state.grammar_phase = "choose_topic"
                 st.session_state.grammar_options = []
+                st.session_state.roleplay_options = []
+                st.session_state.roleplay_chosen = False
+                st.session_state.exercises_completed = False
                 st.rerun()
 
             st.stop()
@@ -426,7 +454,7 @@ if student_name:
                 else:
                     st.warning("Nessun messaggio da salvare.")
 
-        # Avvio primo messaggio
+        # Inizializzazione primo messaggio
         if len(st.session_state.messages) == 0:
             if attivita == "📚 2. Grammatica ed Esercizi":
                 with st.spinner("Alessandro sta analizzando i tuoi punti di miglioramento..."):
@@ -453,6 +481,57 @@ if student_name:
                     st.session_state.messages.append({"role": "model", "content": init_msg, "audio_bytes": None})
                     st.session_state.grammar_phase = "choose_topic"
                     st.rerun()
+
+            elif attivita == "🗣️ 3. Role-play":
+                with st.spinner("Alessandro sta preparando le ambientazioni per il Role-play..."):
+                    prompt_rp = f"""
+                    Proponi esattamente 3 situazioni di Role-play realistiche, divertenti e comunicative per uno studente di livello {livello_studente}.
+                    Per ogni opzione definisci brevemente i due ruoli in modo accattivante (massimo 8-10 parole per opzione).
+                    Restituisci SOLO un JSON array valido di 3 stringhe.
+                    """
+                    try:
+                        res_rp = model.generate_content(prompt_rp)
+                        raw_rp = res_rp.text.strip()
+                        if "```json" in raw_rp:
+                            raw_rp = raw_rp.split("```json")[1].split("```")[0]
+                        elif "```" in raw_rp:
+                            raw_rp = raw_rp.split("```")[1].split("```")[0]
+                        st.session_state.roleplay_options = json.loads(raw_rp.strip())[:3]
+                    except Exception:
+                        st.session_state.roleplay_options = [
+                            "Al ristorante: Tu sei il cliente, io il cameriere",
+                            "In hotel: Tu devi fare il check-in, io il receptionist",
+                            "In negozio: Tu vuoi cambiare un acquisto, io il commesso"
+                        ]
+
+                    init_msg = (
+                        f"Ciao {student_name}! Mettiamoci alla prova con un Role-play a ruoli precisi. "
+                        f"Ecco 3 scenari pensati per te: puoi sceglierne uno premendo il bottone qui sotto, "
+                        f"oppure inventare qualsiasi situazione scrivendola in chat!"
+                    )
+                    init_audio = sintetizza_voce(init_msg) if is_voice_mode else None
+                    st.session_state.messages.append({"role": "model", "content": init_msg, "audio_bytes": init_audio})
+                    st.session_state.roleplay_chosen = False
+                    st.rerun()
+
+            elif attivita == "🎯 4. Sfida (Errori e Quiz)":
+                with st.spinner("Alessandro sta preparando la tua sfida su misura..."):
+                    prompt_sfida = f"Sei Alessandro. Lo studente ha scelto 'Sfida'. Proponigli subito una sfida accattivante sui suoi errori tipici: {dati_studente.get('Punti di miglioramento')} (ad esempio una caccia all'errore o una frase trabocchetto da sistemare)."
+                    res_sf = model.generate_content(prompt_sfida)
+                    init_text = re.sub(r'\b\d{1,2}:\d{2}(?::\d{2})?\b', '', res_sf.text).strip()
+                    st.session_state.messages.append({"role": "model", "content": init_text, "audio_bytes": None})
+                    st.session_state.last_interaction_time = datetime.now()
+                    st.rerun()
+
+            elif attivita == "🎲 5. Gioco":
+                with st.spinner("Alessandro sta preparando il gioco..."):
+                    prompt_gioco = f"Sei Alessandro. Lo studente ha scelto 'Gioco'. Proponigli subito un gioco linguistico divertente (es. 'Due verità e una bugia' o 'Indovina la parola misteriosa') spiegando brevemente come iniziare."
+                    res_g = model.generate_content(prompt_gioco)
+                    init_text = re.sub(r'\b\d{1,2}:\d{2}(?::\d{2})?\b', '', res_g.text).strip()
+                    st.session_state.messages.append({"role": "model", "content": init_text, "audio_bytes": None})
+                    st.session_state.last_interaction_time = datetime.now()
+                    st.rerun()
+
             else:
                 with st.spinner("Alessandro sta preparando la sessione..."):
                     prompt_avvio = f"Lo studente ha scelto '{attivita}'. Avvia la sessione salutandolo in modo pacato, amichevole e naturale, e poni la prima domanda stimolante."
@@ -464,7 +543,7 @@ if student_name:
                     st.session_state.last_interaction_time = datetime.now()
                     st.rerun()
 
-        # Visualizzazione cronologia messaggi
+        # Cronologia messaggi
         for idx, msg in enumerate(st.session_state.messages):
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
@@ -475,22 +554,28 @@ if student_name:
                         st.audio(msg["audio_bytes"], format="audio/mp3")
 
         selected_button_text = None
+
+        # Bottoni interattivi: GRAMMATICA
         if attivita == "📚 2. Grammatica ed Esercizi":
             if st.session_state.grammar_phase == "choose_topic" and st.session_state.grammar_options:
                 st.write("**Scegli l'argomento da ripassare:**")
                 for idx, opt in enumerate(st.session_state.grammar_options):
                     if st.button(f"📌 {opt}", key=f"topic_btn_{idx}", use_container_width=True):
                         selected_button_text = (
-                            f"Vorrei ripassare: {opt}. Spiegami la regola in modo chiaro e sintetico, includendo tutte le coniugazioni ed eccezioni. "
-                            f"Poi chiedimi con calma se ho capito prima di passare agli esercizi."
+                            f"Vorrei ripassare: {opt}. Spiegami la regola in modo chiaro e completo, includendo tutte le coniugazioni ed eccezioni. "
+                            f"Poi chiedimi con calma se ho capito prima di passare alla batteria di 3 esercizi."
                         )
                         st.session_state.grammar_phase = "theory_check"
+                        st.session_state.exercises_completed = False
                 st.caption("Oppure digita l'argomento che preferisci nella casella in basso 👇")
 
             elif st.session_state.grammar_phase == "theory_check":
                 st.write("**Hai capito la spiegazione di Alessandro?**")
-                if st.button("✅ Ho capito, facciamo gli esercizi!", key="btn_understood", use_container_width=True):
-                    selected_button_text = "Ho capito la regola. Ora fammi fare subito degli esercizi pratici ed efficaci per verificare."
+                if st.button("✅ Ho capito, facciamo i 3 esercizi!", key="btn_understood", use_container_width=True):
+                    selected_button_text = (
+                        "Ho capito la regola. Ora proponimi subito una batteria di 3 esercizi diversi: "
+                        "1) Scelta multipla con opzioni A, B, C; 2) Frase da completare; 3) Frase da trasformare o comporre."
+                    )
                     st.session_state.grammar_phase = "exercise"
                 if st.button("❓ Non ho capito bene...", key="btn_not_understood", use_container_width=True):
                     selected_button_text = (
@@ -498,6 +583,34 @@ if student_name:
                         f"cosa non mi è chiaro e rispiegamelo con altri esempi semplici."
                     )
 
+            elif st.session_state.grammar_phase == "exercise" and st.session_state.exercises_completed:
+                st.write("**Vuoi continuare a fare pratica?**")
+                col_ex1, col_ex2 = st.columns(2)
+                with col_ex1:
+                    if st.button("🔄 Altri 3 esercizi su questo argomento", use_container_width=True):
+                        selected_button_text = "Voglio fare altri 3 esercizi elaborati su questo stesso argomento!"
+                        st.session_state.exercises_completed = False
+                with col_ex2:
+                    if st.button("📚 Cambia argomento", use_container_width=True):
+                        st.session_state.grammar_phase = "choose_topic"
+                        st.session_state.exercises_completed = False
+                        st.session_state.messages.append({
+                            "role": "model", 
+                            "content": "Perfetto! Scegli un altro argomento dai bottoni qui sopra oppure scrivimi cosa vorresti ripassare.",
+                            "audio_bytes": None
+                        })
+                        st.rerun()
+
+        # Bottoni interattivi: ROLE-PLAY
+        if attivita == "🗣️ 3. Role-play" and not st.session_state.roleplay_chosen and st.session_state.roleplay_options:
+            st.write("**Scegli lo scenario da simulare:**")
+            for idx, opt in enumerate(st.session_state.roleplay_options):
+                if st.button(f"🎭 {opt}", key=f"rp_btn_{idx}", use_container_width=True):
+                    selected_button_text = f"Ho scelto questo Role-play: {opt}. Inizia tu la scena recitando la tua prima battuta nel tuo ruolo!"
+                    st.session_state.roleplay_chosen = True
+            st.caption("💡 Oppure inventa tu una situazione e descrivi i ruoli nella chat in basso 👇")
+
+        # Input audio / testo
         audio_bytes = None
         if is_voice_mode:
             st.write("---")
@@ -516,8 +629,13 @@ if student_name:
         elif text_input:
             user_display = text_input
             payload_parts = [text_input]
-            if attivita == "📚 2. Grammatica ed Esercizi" and st.session_state.grammar_phase == "choose_topic":
-                st.session_state.grammar_phase = "theory_check"
+            if attivita == "📚 2. Grammatica ed Esercizi":
+                if st.session_state.grammar_phase == "choose_topic":
+                    st.session_state.grammar_phase = "theory_check"
+                elif st.session_state.grammar_phase == "exercise":
+                    st.session_state.exercises_completed = True
+            elif attivita == "🗣️ 3. Role-play":
+                st.session_state.roleplay_chosen = True
         elif new_audio:
             st.session_state.last_audio_processed = audio_bytes
             user_display = "🎤 *Messaggio vocale inviato*"
@@ -525,6 +643,8 @@ if student_name:
                 {"mime_type": "audio/wav", "data": audio_bytes},
                 "Ascolta questo audio e rispondi direttamente come tutor Alessandro con tono calmo. Non inserire timestamp."
             ]
+            if attivita == "🗣️ 3. Role-play":
+                st.session_state.roleplay_chosen = True
 
         if user_display and payload_parts:
             st.session_state.last_interaction_time = datetime.now()
